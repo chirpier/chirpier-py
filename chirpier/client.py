@@ -91,8 +91,8 @@ class Client:
                 return
             except requests.RequestException as e:
                 if attempt == self.retries:
-                    raise ChirpierError(f"Failed to send request after {
-                                        self.retries} attempts: {e}") from e
+                    raise ChirpierError(
+                        "Failed to send request after retries") from e
                 time.sleep(2 ** attempt)
 
 
