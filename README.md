@@ -1,42 +1,107 @@
-# Chirpier SDK for Python
+# Chirpier SDK
 
-The Chirpier SDK for Python provides a simple and efficient way to integrate Chirpier's event tracking functionality into your Python applications.
+Chirpier SDK is a Python SDK that simplifies event tracking and monitoring in your Python applications. It provides an easy-to-use API for sending, managing, and analyzing events, making it ideal for developers building data-driven applications.
 
 ## Features
 
-- Easy-to-use API for sending events to Chirpier
-- Batch processing of events for improved performance
-- Automatic retry mechanism with exponential backoff
-- Thread-safe operations
-- Background processing of the event queue
+- **Event Management**: Easily create and track events in your system.
+- **Error Handling**: Comprehensive error management for reliable tracking.
+- **Lightweight**: Minimal dependencies for faster integration.
+- **Scalable**: Designed for both small applications and enterprise-level workloads.
 
 ## Installation
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/chirpier/chirpier-python.git
-   cd chirpier-python
-   ```
+Install Chirpier SDK using pip:
 
-2. (Optional) Create and activate a virtual environment:
-   ```
-   python -m venv venv
-   source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-   ```
-
-3. Install the required dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+```bash
+pip install chirpier-py
+```
 
 ## Usage
 
-Here's a quick example of how to use the Chirpier SDK:
+Here’s a quick example of how to use Chirpier SDK:
 
 ```python
-from chirpier import Chirpier, Event
-import time
+from chirpier import ChirpierClientManager, Event
 
-def main():
-    c = Chirpier(key="your-api-key")
-    c.start_batch_processor()
+# Initialize the client
+ChirpierClientManager.initialize(api_key="your-api-key")
+
+# Create an event
+event = Event(group_id="f3438ee9-b964-48aa-b938-a803df440a3c", stream_name="Clicks", value=1)
+
+# Send the event
+try:
+   ChirpierClientManager.monitor(event)
+except (ConnectionError, HTTPError) as e:
+   print(f"Failed to send event: {e}")
+```
+
+## Components
+
+### **Client**
+- Initializes the connection with the event tracking service.
+- Provides methods for sending and managing events.
+
+### **Event**
+- Represents an event with properties like `group_id`, `stream_name`, and `value`.
+
+### **Utils**
+- Helper functions for advanced use cases.
+
+### **Error Handling**
+- Custom exceptions to handle and debug errors effectively.
+
+## Testing
+
+Run the test suite to ensure everything works as expected:
+
+```bash
+pytest tests/
+```
+
+## Contributing
+
+We welcome contributions! To contribute:
+
+1. Fork this repository.
+2. Create a new branch for your feature or bug fix.
+3. Submit a pull request with a clear explanation of your changes.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Support
+
+If you have any questions or need support, please open an issue on the GitHub repository or contact us at contact@chirpier.co.
+
+## API Reference
+
+### Client
+
+```python
+client = Client(api_key="your-api-key")
+```
+
+#### Parameters
+- `your-api-key` (str): Your Chirpier API key
+
+### Event
+
+```python
+event = Event(
+    group_id="f3438ee9-b964-48aa-b938-a803df440a3c",
+    stream_name="Clicks",
+    value=1
+)
+```
+
+#### Parameters
+- `group_id` (str): UUID of the monitoring group
+- `stream_name` (str): Name of the measurement stream
+- `value` (float): Numeric value to record
+
+---
+
+Start tracking your events seamlessly with Chirpier SDK!

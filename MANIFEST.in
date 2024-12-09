@@ -2,4 +2,7 @@ include README.md
 include LICENSE
 include example.py
 include tests/*
-
+include pyproject.toml
+include .pylintrc
+include .gitignore
+include MANIFEST.in
