@@ -96,7 +96,7 @@ class Client:
                 time.sleep(2 ** attempt)
 
 
-class ChirpierClientManager:
+class Chirpier:
     """Manager for the global Chirpier client."""
     _client = None
 
@@ -123,6 +123,6 @@ class ChirpierClientManager:
             cls._client = None
 
 # Usage
-# ChirpierClientManager.initialize(api_key)
-# ChirpierClientManager.monitor(event)
-# ChirpierClientManager.stop()
+# Chirpier.initialize(api_key)
+# Chirpier.monitor(event)
+# Chirpier.stop()

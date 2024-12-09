@@ -3,7 +3,7 @@
 from urllib.error import HTTPError
 
 try:
-    from chirpier import ChirpierClientManager, Event
+    from chirpier import Chirpier, Event
 except ImportError:
     print("Error: Unable to import 'chirpier'. Make sure it's installed correctly.")
     exit(1)
@@ -12,18 +12,15 @@ except ImportError:
 def main():
     """Main function to run the example."""
     # Initialize the client
-    ChirpierClientManager.initialize(api_key="your-api-key")
-
-    # Create an event
-    event = Event(
-        group_id="f3438ee9-b964-48aa-b938-a803df440a3c",
-        stream_name="Clicks",
-        value=1
-    )
+    Chirpier.initialize(api_key="your-api-key")
 
     # Send the event
     try:
-        ChirpierClientManager.monitor(event)
+        Chirpier.monitor(Event(
+            group_id="bfd9299d-817a-452f-bc53-6e154f2281fc",
+            stream_name="Clicks",
+            value=1
+        ))
         print("Event sent successfully!")
     except (ConnectionError, HTTPError) as e:
         print(f"Failed to send event: {e}")

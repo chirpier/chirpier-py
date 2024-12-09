@@ -22,17 +22,18 @@ pip install chirpier-py
 Here’s a quick example of how to use Chirpier SDK:
 
 ```python
-from chirpier import ChirpierClientManager, Event
+from chirpier import Chirpier, Event
 
 # Initialize the client
-ChirpierClientManager.initialize(api_key="your-api-key")
+Chirpier.initialize(api_key="your-api-key")
 
-# Create an event
-event = Event(group_id="f3438ee9-b964-48aa-b938-a803df440a3c", stream_name="Clicks", value=1)
-
-# Send the event
+# Monitor the event
 try:
-   ChirpierClientManager.monitor(event)
+   Chirpier.monitor(Event(
+      group_id="bfd9299d-817a-452f-bc53-6e154f2281fc",
+      stream_name="My measurement",
+      value=1
+   ))
 except (ConnectionError, HTTPError) as e:
    print(f"Failed to send event: {e}")
 ```
@@ -40,16 +41,20 @@ except (ConnectionError, HTTPError) as e:
 ## Components
 
 ### **Client**
+
 - Initializes the connection with the event tracking service.
 - Provides methods for sending and managing events.
 
 ### **Event**
+
 - Represents an event with properties like `group_id`, `stream_name`, and `value`.
 
 ### **Utils**
+
 - Helper functions for advanced use cases.
 
 ### **Error Handling**
+
 - Custom exceptions to handle and debug errors effectively.
 
 ## Testing
@@ -81,26 +86,34 @@ If you have any questions or need support, please open an issue on the GitHub re
 ### Client
 
 ```python
-client = Client(api_key="your-api-key")
+Chirpier.initialize(api_key="your-api-key")
 ```
 
 #### Parameters
+
 - `your-api-key` (str): Your Chirpier API key
 
 ### Event
 
 ```python
 event = Event(
-    group_id="f3438ee9-b964-48aa-b938-a803df440a3c",
-    stream_name="Clicks",
+    group_id="bfd9299d-817a-452f-bc53-6e154f2281fc",
+    stream_name="My measurement",
     value=1
 )
 ```
 
 #### Parameters
+
 - `group_id` (str): UUID of the monitoring group
 - `stream_name` (str): Name of the measurement stream
 - `value` (float): Numeric value to record
+
+### Monitor
+
+```python
+Chirpier.monitor(event)
+```
 
 ---
 
