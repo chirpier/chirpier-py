@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "chirpier-py"
+version = "0.1.0"
+description = "A Python package for interacting with the Chirpier API."
+authors = ["Chirpier <contact@chirpier.co>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "^2.25.1"
+pydantic = "^2.5.2"
+threading = "^0.0.2"
+pytest = "^6.2"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2"
+black = "^21.5b0"
+isort = "^5.8.0"
+flake8 = "^3.9.0"
+setuptools = "^65.5.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
