@@ -1,7 +1,7 @@
 """This module provides an example of how to use the Chirpier SDK."""
 
 from urllib.error import HTTPError
-
+import time
 try:
     from chirpier import Chirpier, Event
 except ImportError:
@@ -18,12 +18,15 @@ def main():
     try:
         Chirpier.monitor(Event(
             group_id="bfd9299d-817a-452f-bc53-6e154f2281fc",
-            stream_name="Clicks",
+            stream_name="My measurement",
             value=1
         ))
         print("Event sent successfully!")
     except (ConnectionError, HTTPError) as e:
         print(f"Failed to send event: {e}")
+
+    # Wait
+    time.sleep(1)
 
 
 if __name__ == "__main__":
