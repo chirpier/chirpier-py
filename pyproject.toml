@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "chirpier"
-version = "0.0.1"
+version = "0.0.3"
 description = "A Python SDK for interacting with the Chirpier API."
 readme = "README.md"
 authors = ["Chirpier <contact@chirpier.co>"]
