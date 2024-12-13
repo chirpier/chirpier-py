@@ -1,10 +1,11 @@
 """This module provides a client for sending events to the Chirpier API."""
 
-import threading
+import logging
+from threading import Thread, Event as ThreadEvent, Lock
 import time
 try:
     import requests
-    from queue import Queue
+    from queue import Queue, Full, Empty
 except ImportError as exc:
     raise ImportError(
         "requests package is required. Please install it with 'pip install requests'"
@@ -21,14 +22,16 @@ class Config:
     def __init__(self,
                  api_key: str,
                  api_endpoint: str = "https://events.chirpier.co/v1.0/events",
-                 batch_size: int = 50,
-                 flush_delay: float = 0.5):
+                 flush_delay: float = 0.5,
+                 log_level: int = logging.NOTSET):
         self.api_key = api_key
         self.api_endpoint = api_endpoint
-        self.retries = 5
+        self.retries = 10
         self.timeout = 10
-        self.batch_size = batch_size
+        self.batch_size = 100
         self.flush_delay = flush_delay
+        self.log_level = log_level
+        self.queue_size = 2000
 
     def to_dict(self) -> dict:
         """Convert configuration to dictionary."""
@@ -38,7 +41,9 @@ class Config:
             "retries": self.retries,
             "timeout": self.timeout,
             "batch_size": self.batch_size,
-            "flush_delay": self.flush_delay
+            "flush_delay": self.flush_delay,
+            "log_level": self.log_level,
+            "queue_size": self.queue_size
         }
 
     def update(self, **kwargs) -> None:
@@ -53,49 +58,67 @@ class Client:
 
     def __init__(self, config: Config):
         if not config.api_key or not is_valid_jwt(config.api_key):
-            raise ChirpierError("Invalid API key: Not a valid JWT")
+            raise ValueError("Invalid API key: Not a valid JWT")
 
         self.config = config
-        self.event_queue = Queue()
-        self.queue_lock = threading.Lock()
-        self.stop_event = threading.Event()
-        self.thread = threading.Thread(target=self.run, daemon=True)
-        self.thread.start()
+        self.event_queue = Queue(maxsize=config.queue_size)
+        self.logger = logging.getLogger("chirpier")
+        self.logger.setLevel(config.log_level)
+        self._terminate_event = ThreadEvent()
+        self._worker = Thread(target=self._process_events, daemon=True)
+        self._queue_lock = Lock()
+        self._worker.start()
 
     def monitor(self, event: Event) -> None:
-        """Add an event to the monitoring queue."""
+        """Queue an event for processing."""
         if not event.is_valid():
-            raise ChirpierError("Invalid event format")
-        self.event_queue.put(event)
+            raise ValueError("Invalid event format")
 
-    def stop(self) -> None:
-        """Stop the monitoring thread and flush remaining events."""
-        self.stop_event.set()
-        self.thread.join()
-        self.flush_events()
+        with self._queue_lock:
+            if self.event_queue.full():
+                raise ChirpierError("Event queue is full")
+            try:
+                self.event_queue.put(
+                    event, block=True, timeout=self.config.timeout)
+            except Full as exc:
+                raise ChirpierError("Event queue is full") from exc
 
-    def run(self) -> None:
-        """Run the monitoring thread."""
-        while not self.stop_event.is_set():
-            time.sleep(self.config.flush_delay)
-            self.flush_events()
+    def _process_events(self) -> None:
+        """Process events from the queue."""
+        batch = []
 
-    def flush_events(self) -> None:
-        """Flush queued events to the API."""
-        events = []
-        while not self.event_queue.empty():
-            events.append(self.event_queue.get())
+        while not self._terminate_event.is_set() or not self.event_queue.empty():
+            try:
+                event = self.event_queue.get(timeout=self.config.flush_delay)
+                batch.append(event)
 
-        if not events:
-            return
+                if len(batch) >= self.config.batch_size:
+                    self._flush_batch(batch)
+            except Empty:
+                if batch:
+                    self._flush_batch(batch)
 
+    def _flush_batch(self, batch: list[Event]) -> None:
         try:
-            self.send_events(events)
-        except ChirpierError as e:
-            # Put events back in queue
-            for event in events:
-                self.event_queue.put(event)
-            print(f"Failed to send events: {e}")
+            # send_events expects a list of Event objects
+            self.send_events(batch)
+            for _ in batch:
+                self.event_queue.task_done()
+            self.logger.info(
+                "Successfully sent batch of %d events", len(batch))
+        except (requests.RequestException, ChirpierError) as exc:
+            self.logger.error("Failed to send events: %s", exc)
+            # Drop events if failed to send
+            for _ in batch:
+                self.event_queue.task_done()
+        finally:
+            batch.clear()
+
+    def shutdown(self) -> None:
+        """Gracefully shut down the client."""
+        self._terminate_event.set()
+        self._worker.join()
+        self.event_queue.join()
 
     def send_events(self, events: list[Event]) -> None:
         """Send events to the API."""
@@ -111,13 +134,11 @@ class Client:
                     headers=headers,
                     timeout=self.config.timeout
                 )
-                if not response.ok:
-                    raise requests.RequestException(
-                        f"Request failed with status code {response.status_code}")
-                print(f"Successfully sent {len(events)} events")
-                break
+                if response.ok:
+                    return
+                raise requests.RequestException(f"HTTP {response.status_code}")
             except requests.RequestException as e:
-                print("Request failed")
+                logging.error("Request failed: %s", e)
                 if attempt == self.config.retries:
                     raise ChirpierError(
                         f"Failed to send request after retries: {str(e)}") from e
@@ -131,11 +152,13 @@ class Chirpier:
 
     @classmethod
     def initialize(cls, api_key: str,
-                   api_endpoint: str = "https://events.chirpier.co/v1.0/events") -> None:
+                   api_endpoint: str = "https://events.chirpier.co/v1.0/events",
+                   log_level: int = logging.NOTSET) -> None:
         """Initialize the global Chirpier client."""
         if cls._client is not None:
             raise ChirpierError("Chirpier SDK is already initialized")
-        cls._client = Client(Config(api_key, api_endpoint))
+        cls._client = Client(
+            Config(api_key, api_endpoint, log_level=log_level))
 
     @classmethod
     def monitor(cls, event: Event) -> None:
@@ -149,7 +172,7 @@ class Chirpier:
     def stop(cls) -> None:
         """Stop the global client."""
         if cls._client is not None:
-            cls._client.stop()
+            cls._client.shutdown()
             cls._client = None
 
 # Usage

@@ -49,10 +49,6 @@ except (ConnectionError, HTTPError) as e:
 
 - Represents an event with properties like `group_id`, `stream_name`, and `value`.
 
-### **Utils**
-
-- Helper functions for advanced use cases.
-
 ### **Error Handling**
 
 - Custom exceptions to handle and debug errors effectively.
