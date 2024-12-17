@@ -28,10 +28,10 @@ class Config:
         self.api_endpoint = api_endpoint
         self.retries = 10
         self.timeout = 10
-        self.batch_size = 100
+        self.batch_size = 350
         self.flush_delay = flush_delay
         self.log_level = log_level
-        self.queue_size = 2000
+        self.queue_size = 25000
 
     def to_dict(self) -> dict:
         """Convert configuration to dictionary."""
