@@ -1,13 +1,14 @@
 # Chirpier SDK
 
-Chirpier SDK is a Python SDK that simplifies event tracking and monitoring in your Python applications. It provides an easy-to-use API for sending, managing, and analyzing events, making it ideal for developers building data-driven applications.
+The Chirpier SDK for Python is a simple, lightweight, and efficient SDK to emit event data to Chirpier direct from your Python applications.
 
 ## Features
 
-- **Event Management**: Easily create and track events in your system.
-- **Error Handling**: Comprehensive error management for reliable tracking.
-- **Lightweight**: Minimal dependencies for faster integration.
-- **Scalable**: Designed for both small applications and enterprise-level workloads.
+- Easy-to-use API for sending events to Chirpier
+- Automatic batching of events for improved performance
+- Automatic retry mechanism with exponential backoff
+- Thread-safe operations
+- Periodic flushing of the event queue
 
 ## Installation
 
@@ -17,7 +18,9 @@ Install Chirpier SDK using pip:
 pip install chirpier-py
 ```
 
-## Usage
+## Getting Started
+
+To start using the SDK, you need to initialize it with your API key. The SDK works in both browser and Node.js environments.
 
 Here’s a quick example of how to use Chirpier SDK:
 
@@ -25,7 +28,7 @@ Here’s a quick example of how to use Chirpier SDK:
 from chirpier import Chirpier, Event
 
 # Initialize the client
-Chirpier.initialize(api_key="your-api-key")
+Chirpier.initialize(api_key="your-api-key", region="us-west")
 
 # Monitor the event
 try:
@@ -43,7 +46,7 @@ except (ConnectionError, HTTPError) as e:
 ### **Client**
 
 - Initializes the connection with the event tracking service.
-- Provides methods for sending and managing events.
+- Uses the `region` parameter to determine the location of the event tracking service.
 
 ### **Event**
 
@@ -53,7 +56,44 @@ except (ConnectionError, HTTPError) as e:
 
 - Custom exceptions to handle and debug errors effectively.
 
-## Testing
+## API Reference
+
+### Initialize
+
+Initialize the Chirpier client with your API key and region. Find your API key in the Chirpier Integration page.
+
+```python
+Chirpier.initialize(api_key="your-api-key", region="us-west")
+```
+
+- `your-api-key` (str): Your Chirpier integration key
+- `region` (str): Your local region - options are `us-west`, `eu-west`, `asia-southeast`
+
+### Event
+
+All events emitted to Chirpier must have the following properties:
+
+```python
+event = Event(
+    group_id="bfd9299d-817a-452f-bc53-6e154f2281fc",
+    stream_name="My measurement",
+    value=1
+)
+```
+
+- `group_id` (str): UUID of the monitoring group
+- `stream_name` (str): Name of the measurement stream
+- `value` (float): Numeric value to record
+
+### Monitor
+
+Send an event to Chirpier using the `monitor` function.
+
+```python
+Chirpier.monitor(event)
+```
+
+## Test
 
 Run the test suite to ensure everything works as expected:
 
@@ -75,41 +115,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Support
 
-If you have any questions or need support, please open an issue on the GitHub repository or contact us at contact@chirpier.co.
-
-## API Reference
-
-### Client
-
-```python
-Chirpier.initialize(api_key="your-api-key")
-```
-
-#### Parameters
-
-- `your-api-key` (str): Your Chirpier API key
-
-### Event
-
-```python
-event = Event(
-    group_id="bfd9299d-817a-452f-bc53-6e154f2281fc",
-    stream_name="My measurement",
-    value=1
-)
-```
-
-#### Parameters
-
-- `group_id` (str): UUID of the monitoring group
-- `stream_name` (str): Name of the measurement stream
-- `value` (float): Numeric value to record
-
-### Monitor
-
-```python
-Chirpier.monitor(event)
-```
+If you have any questions or need support, please open an issue on the GitHub repository or contact us at <contact@chirpier.co>.
 
 ---
 

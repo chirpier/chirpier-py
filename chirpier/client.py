@@ -21,17 +21,21 @@ class Config:
 
     def __init__(self,
                  api_key: str,
-                 api_endpoint: str = "https://events.chirpier.co/v1.0/events",
-                 flush_delay: float = 0.5,
+                 region: str = "events",
                  log_level: int = logging.NOTSET):
         self.api_key = api_key
-        self.api_endpoint = api_endpoint
         self.retries = 10
         self.timeout = 10
         self.batch_size = 350
-        self.flush_delay = flush_delay
+        self.flush_delay = 0.5
+        self.queue_size = 50000
         self.log_level = log_level
-        self.queue_size = 25000
+        self.api_endpoint = f"https://{region}.chirpier.co/v1.0/events"
+
+        """Set the region, validating it is one of the allowed values."""
+        if region not in {"us-west", "eu-west", "asia-southeast", "events"}:
+            raise ValueError(
+                f"{region} is not a valid region. Please use one of: us-west, eu-west, asia-southeast, events")
 
     def to_dict(self) -> dict:
         """Convert configuration to dictionary."""
@@ -76,12 +80,16 @@ class Client:
 
         with self._queue_lock:
             if self.event_queue.full():
-                raise ChirpierError("Event queue is full")
+                self.logger.debug(
+                    "Event queue is full, dropping event: %s", event)
+                return
             try:
                 self.event_queue.put(
                     event, block=True, timeout=self.config.timeout)
             except Full as exc:
-                raise ChirpierError("Event queue is full") from exc
+                self.logger.debug(
+                    "Event queue put timed out, dropping event: %s", exc)
+                return
 
     def _process_events(self) -> None:
         """Process events from the queue."""
@@ -136,12 +144,24 @@ class Client:
                 )
                 if response.ok:
                     return
+                if response.status_code == 429 or response.status_code >= 500:
+                    if attempt < self.config.retries:
+                        # Cap exponential backoff at 30 seconds
+                        backoff = min(2 ** attempt, 30)
+                        if response.status_code == 429 and 'Retry-After' in response.headers:
+                            try:
+                                backoff = int(response.headers['Retry-After'])
+                            except (ValueError, TypeError):
+                                pass
+                        time.sleep(backoff)
+                        continue
                 raise requests.RequestException(f"HTTP {response.status_code}")
             except requests.RequestException as e:
                 logging.error("Request failed: %s", e)
                 if attempt == self.config.retries:
-                    raise ChirpierError(
-                        f"Failed to send request after retries: {str(e)}") from e
+                    logging.error(
+                        "Failed to send request after retries: %s", e)
+                    raise  # Re-raise to be caught by _flush_batch
                 # Cap exponential backoff at 30 seconds
                 time.sleep(min(2 ** attempt, 30))
 
@@ -152,13 +172,13 @@ class Chirpier:
 
     @classmethod
     def initialize(cls, api_key: str,
-                   api_endpoint: str = "https://events.chirpier.co/v1.0/events",
+                   region: str = "events",
                    log_level: int = logging.NOTSET) -> None:
         """Initialize the global Chirpier client."""
         if cls._client is not None:
             raise ChirpierError("Chirpier SDK is already initialized")
         cls._client = Client(
-            Config(api_key, api_endpoint, log_level=log_level))
+            Config(api_key, region, log_level=log_level))
 
     @classmethod
     def monitor(cls, event: Event) -> None:

@@ -12,7 +12,7 @@ except ImportError:
 def main():
     """Main function to run the example."""
     # Initialize the client
-    Chirpier.initialize(api_key="your-api-key")
+    Chirpier.initialize(api_key="your-api-key", region="us-west")
 
     # Send the event
     try:

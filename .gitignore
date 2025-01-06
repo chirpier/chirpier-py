@@ -44,3 +44,5 @@ htmlcov/
 
 # Poetry
 poetry.lock
+
+.DS_Store
