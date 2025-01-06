@@ -20,7 +20,7 @@ pip install chirpier-py
 
 ## Getting Started
 
-To start using the SDK, you need to initialize it with your API key. The SDK works in both browser and Node.js environments.
+To start using the SDK, you need to initialize it with your API key.
 
 Here’s a quick example of how to use Chirpier SDK:
 
