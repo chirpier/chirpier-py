@@ -15,7 +15,7 @@ The Chirpier SDK for Python is a simple, lightweight, and efficient SDK to emit 
 Install Chirpier SDK using pip:
 
 ```bash
-pip install chirpier-py
+pip install chirpier
 ```
 
 ## Getting Started
@@ -40,21 +40,6 @@ try:
 except (ConnectionError, HTTPError) as e:
    print(f"Failed to send event: {e}")
 ```
-
-## Components
-
-### **Client**
-
-- Initializes the connection with the event tracking service.
-- Uses the `region` parameter to determine the location of the event tracking service.
-
-### **Event**
-
-- Represents an event with properties like `group_id`, `stream_name`, and `value`.
-
-### **Error Handling**
-
-- Custom exceptions to handle and debug errors effectively.
 
 ## API Reference
 
