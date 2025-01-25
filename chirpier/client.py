@@ -21,7 +21,7 @@ class Config:
 
     def __init__(self,
                  api_key: str,
-                 region: str = "events",
+                 region: str = "eu-west",
                  log_level: int = logging.NOTSET):
         self.api_key = api_key
         self.retries = 10
@@ -33,9 +33,9 @@ class Config:
         self.api_endpoint = f"https://{region}.chirpier.co/v1.0/events"
 
         """Set the region, validating it is one of the allowed values."""
-        if region not in {"us-west", "eu-west", "asia-southeast", "events"}:
+        if region not in {"us-west", "eu-west", "asia-southeast"}:
             raise ValueError(
-                f"{region} is not a valid region. Please use one of: us-west, eu-west, asia-southeast, events")
+                f"{region} is not a valid region. Please use one of: us-west, eu-west, asia-southeast")
 
     def to_dict(self) -> dict:
         """Convert configuration to dictionary."""
