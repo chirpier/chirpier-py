@@ -1,47 +1,48 @@
-"""This module provides utility functions for the Chirpier SDK."""
+"""Utility helpers for the Chirpier SDK."""
 
-import base64
-import json
+from __future__ import annotations
+
+import os
 
 
-def is_valid_jwt(token):
-    """
-    Validates a JWT token by checking its structure and decoding its parts.
+def is_valid_api_key(token: str) -> bool:
+    """Validate that an API key uses the expected Chirpier prefix."""
+    return (
+        isinstance(token, str) and token.startswith("chp_") and len(token) > len("chp_")
+    )
 
-    Args:
-        token (str): The JWT token to validate.
 
-    Returns:
-        bool: True if the token is a valid JWT, False otherwise.
-    """
-    if not isinstance(token, str):
-        return False
-
-    parts = token.split('.')
-    if len(parts) != 3:
-        return False
-
+def _read_dotenv_value(key: str, path: str = ".env") -> str | None:
     try:
-        # Validate header and payload are valid base64 and JSON
-        for part in parts[:2]:
-            # Add padding if needed
-            padding = 4 - (len(part) % 4)
-            if padding != 4:
-                part += '=' * padding
+        with open(path, "r", encoding="utf-8") as dotenv_file:
+            for raw_line in dotenv_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                env_key, env_value = line.split("=", 1)
+                if env_key.strip() != key:
+                    continue
+                value = env_value.strip().strip('"').strip("'")
+                return value or None
+    except FileNotFoundError:
+        return None
+    return None
 
-            # Decode base64
-            decoded = base64.urlsafe_b64decode(part)
 
-            # Verify it's valid JSON
-            json.loads(decoded)
+def resolve_api_key(provided_key: str | None) -> str | None:
+    """Resolve API key with precedence: provided -> env -> .env."""
+    if isinstance(provided_key, str):
+        key = provided_key.strip()
+        if key:
+            return key
 
-        # Verify signature is valid base64
-        sig_padding = 4 - (len(parts[2]) % 4)
-        if sig_padding != 4:
-            parts[2] += '=' * sig_padding
-        base64.urlsafe_b64decode(parts[2])
+    env_key = os.getenv("CHIRPIER_API_KEY", "").strip()
+    if env_key:
+        return env_key
 
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return False
-
-    return True
+    dotenv_key = _read_dotenv_value("CHIRPIER_API_KEY")
+    return (
+        dotenv_key.strip()
+        if isinstance(dotenv_key, str) and dotenv_key.strip()
+        else None
+    )

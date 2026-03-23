@@ -1,34 +1,50 @@
-"""This module provides tests for the utility functions in the Chirpier SDK."""
+"""Tests for utility helpers."""
 
+from __future__ import annotations
+
+import os
+import tempfile
 import unittest
-from chirpier.utils import is_valid_jwt
+
+from chirpier.utils import is_valid_api_key, resolve_api_key
 
 
 class TestUtils(unittest.TestCase):
-    """Tests for the utility functions."""
+    def test_is_valid_api_key(self):
+        self.assertTrue(is_valid_api_key("chp_valid"))
+        self.assertFalse(is_valid_api_key("invalid"))
+        self.assertFalse(is_valid_api_key("chp_"))
 
-    def test_valid_jwt(self):
-        """Tests that a valid JWT is correctly identified."""
-        valid_jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-        self.assertTrue(is_valid_jwt(valid_jwt))
+    def test_resolve_api_key_precedence(self):
+        old_env = os.getenv("CHIRPIER_API_KEY")
+        try:
+            os.environ["CHIRPIER_API_KEY"] = "chp_from_env"
+            self.assertEqual(resolve_api_key("chp_from_options"), "chp_from_options")
+            self.assertEqual(resolve_api_key(None), "chp_from_env")
+        finally:
+            if old_env is None:
+                os.environ.pop("CHIRPIER_API_KEY", None)
+            else:
+                os.environ["CHIRPIER_API_KEY"] = old_env
 
-    def test_invalid_jwt(self):
-        """Tests that an invalid JWT is correctly identified."""
-        invalid_jwt = "not.enough.segments"  # JWT needs exactly 3 segments
-        self.assertFalse(is_valid_jwt(invalid_jwt))
+    def test_resolve_api_key_from_dotenv(self):
+        old_env = os.getenv("CHIRPIER_API_KEY")
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                os.environ.pop("CHIRPIER_API_KEY", None)
+                os.chdir(tmpdir)
+                with open(".env", "w", encoding="utf-8") as dotenv_file:
+                    dotenv_file.write("CHIRPIER_API_KEY=chp_from_dotenv\n")
 
-        invalid_jwt2 = "not a jwt at all"  # No dots
-        self.assertFalse(is_valid_jwt(invalid_jwt2))
-
-        invalid_jwt3 = ".."  # Empty segments
-        self.assertFalse(is_valid_jwt(invalid_jwt3))
-
-        invalid_jwt4 = "invalid.base64.segments"  # Invalid base64 encoding
-        self.assertFalse(is_valid_jwt(invalid_jwt4))
-
-        invalid_jwt5 = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"  # Empty payload
-        self.assertFalse(is_valid_jwt(invalid_jwt5))
+                self.assertEqual(resolve_api_key(None), "chp_from_dotenv")
+            finally:
+                os.chdir(cwd)
+                if old_env is None:
+                    os.environ.pop("CHIRPIER_API_KEY", None)
+                else:
+                    os.environ["CHIRPIER_API_KEY"] = old_env
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -1,201 +1,433 @@
-"""This module provides a client for sending events to the Chirpier API."""
+"""Client implementation for sending logs to the Chirpier API."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 import logging
-from threading import Thread, Event as ThreadEvent, Lock
+from queue import Empty, Full, Queue
+import random
+from threading import Event as ThreadEvent
+from threading import Lock, Thread
 import time
-try:
-    import requests
-    from queue import Queue, Full, Empty
-except ImportError as exc:
-    raise ImportError(
-        "requests package is required. Please install it with 'pip install requests'"
-    ) from exc
+from typing import ClassVar
+from urllib.parse import urlparse
 
-from .event import Event
+import requests
+
 from .errors import ChirpierError
-from .utils import is_valid_jwt
+from .log import Log
+from .utils import is_valid_api_key, resolve_api_key
+
+DEFAULT_API_ENDPOINT = "https://logs.chirpier.co/v1.0/logs"
+DEFAULT_SERVICER_ENDPOINT = "https://api.chirpier.co/v1.0"
 
 
+@dataclass(slots=True)
 class Config:
-    """Configuration for the Chirpier client."""
+    """Configuration for Chirpier clients."""
 
-    def __init__(self,
-                 api_key: str,
-                 region: str = "eu-west",
-                 log_level: int = logging.NOTSET):
-        self.api_key = api_key
-        self.retries = 10
-        self.timeout = 10
-        self.batch_size = 350
-        self.flush_delay = 0.5
-        self.queue_size = 50000
-        self.log_level = log_level
-        self.api_endpoint = f"https://{region}.chirpier.co/v1.0/events"
+    api_key: str | None = None
+    api_endpoint: str = DEFAULT_API_ENDPOINT
+    servicer_endpoint: str = DEFAULT_SERVICER_ENDPOINT
+    retries: int = 10
+    timeout: int | float = 10
+    batch_size: int = 500
+    flush_delay: float = 0.5
+    queue_size: int = 5000
+    log_level: int = logging.NOTSET
 
-        """Set the region, validating it is one of the allowed values."""
-        if region not in {"us-west", "eu-west", "asia-southeast"}:
-            raise ValueError(
-                f"{region} is not a valid region. Please use one of: us-west, eu-west, asia-southeast")
+    def __post_init__(self) -> None:
+        if self.retries < 0:
+            raise ValueError("retries must be non-negative")
+        if self.timeout <= 0:
+            raise ValueError("timeout must be positive")
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        if self.flush_delay < 0:
+            raise ValueError("flush_delay must be non-negative")
+        if self.queue_size <= 0:
+            raise ValueError("queue_size must be positive")
+        if not isinstance(self.api_endpoint, str) or not self.api_endpoint.strip():
+            raise ValueError("api_endpoint must be a non-empty string")
 
-    def to_dict(self) -> dict:
-        """Convert configuration to dictionary."""
-        return {
-            "api_key": self.api_key,
-            "api_endpoint": self.api_endpoint,
-            "retries": self.retries,
-            "timeout": self.timeout,
-            "batch_size": self.batch_size,
-            "flush_delay": self.flush_delay,
-            "log_level": self.log_level,
-            "queue_size": self.queue_size
-        }
+        parsed = urlparse(self.api_endpoint)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("api_endpoint must be a valid absolute URL")
 
-    def update(self, **kwargs) -> None:
-        """Update configuration values."""
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
+        if self.servicer_endpoint is None:
+            self.servicer_endpoint = DEFAULT_SERVICER_ENDPOINT
+
+        parsed_servicer = urlparse(self.servicer_endpoint)
+        if (
+            parsed_servicer.scheme not in ("http", "https")
+            or not parsed_servicer.netloc
+        ):
+            raise ValueError("servicer_endpoint must be a valid absolute URL")
 
 
 class Client:
-    """Client for sending events to the Chirpier API."""
+    """Standalone client instance for sending logs."""
 
     def __init__(self, config: Config):
-        if not config.api_key or not is_valid_jwt(config.api_key):
-            raise ValueError("Invalid API key: Not a valid JWT")
+        resolved_key = resolve_api_key(config.api_key)
+        if not resolved_key:
+            raise ValueError("API key is required")
+        if not is_valid_api_key(resolved_key):
+            raise ValueError("Invalid API key: must start with 'chp_'")
 
+        config.api_key = resolved_key
+        if config.servicer_endpoint is None:
+            config.servicer_endpoint = DEFAULT_SERVICER_ENDPOINT
+        config.servicer_endpoint = config.servicer_endpoint.rstrip("/")
         self.config = config
-        self.event_queue = Queue(maxsize=config.queue_size)
+
+        self.log_queue: Queue[Log] = Queue(maxsize=config.queue_size)
         self.logger = logging.getLogger("chirpier")
         self.logger.setLevel(config.log_level)
         self._terminate_event = ThreadEvent()
-        self._worker = Thread(target=self._process_events, daemon=True)
+        self._flush_now_event = ThreadEvent()
+        self._idle_event = ThreadEvent()
+        self._idle_event.set()
+        self._state_lock = Lock()
+        self._inflight = 0
         self._queue_lock = Lock()
+        self._worker = Thread(target=self._process_logs, daemon=True)
         self._worker.start()
 
-    def monitor(self, event: Event) -> None:
-        """Queue an event for processing."""
-        if not event.is_valid():
-            raise ValueError("Invalid event format")
+    def __enter__(self) -> Client:
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.shutdown()
+
+    def log(self, entry: Log) -> None:
+        """Queue a log entry for async delivery."""
+        if not isinstance(entry, Log):
+            raise ValueError("entry must be an instance of Log")
 
         with self._queue_lock:
-            if self.event_queue.full():
-                self.logger.debug(
-                    "Event queue is full, dropping event: %s", event)
-                return
+            if self.log_queue.full():
+                raise ChirpierError(
+                    f"Log queue is full (max size: {self.config.queue_size})"
+                )
             try:
-                self.event_queue.put(
-                    event, block=True, timeout=self.config.timeout)
+                self.log_queue.put(entry, block=True, timeout=self.config.timeout)
+                self._idle_event.clear()
             except Full as exc:
-                self.logger.debug(
-                    "Event queue put timed out, dropping event: %s", exc)
-                return
+                raise ChirpierError("Failed to queue log: timeout") from exc
 
-    def _process_events(self) -> None:
-        """Process events from the queue."""
-        batch = []
+    def flush(self) -> None:
+        """Block until currently queued logs are processed."""
+        self._flush_now_event.set()
+        self.log_queue.join()
+        self._idle_event.wait(timeout=self.config.timeout)
 
-        while not self._terminate_event.is_set() or not self.event_queue.empty():
+    def shutdown(self) -> None:
+        """Gracefully shut down the worker after flushing queued logs."""
+        self._flush_now_event.set()
+        self._terminate_event.set()
+        self._worker.join()
+        self.log_queue.join()
+
+    def close(self) -> None:
+        """Alias for shutdown()."""
+        self.shutdown()
+
+    def _process_logs(self) -> None:
+        batch: list[Log] = []
+
+        while not self._terminate_event.is_set() or not self.log_queue.empty():
             try:
-                event = self.event_queue.get(timeout=self.config.flush_delay)
-                batch.append(event)
+                poll_timeout = min(self.config.flush_delay, 0.1)
+                if poll_timeout <= 0:
+                    poll_timeout = 0.1
+
+                entry = self.log_queue.get(timeout=poll_timeout)
+                batch.append(entry)
 
                 if len(batch) >= self.config.batch_size:
                     self._flush_batch(batch)
             except Empty:
-                if batch:
+                if batch and self._flush_now_event.is_set():
+                    self._flush_now_event.clear()
+                    self._flush_batch(batch)
+                elif batch:
                     self._flush_batch(batch)
 
-    def _flush_batch(self, batch: list[Event]) -> None:
+            if batch and self._flush_now_event.is_set():
+                self._flush_now_event.clear()
+                self._flush_batch(batch)
+
+        if batch:
+            self._flush_batch(batch)
+
+    def _flush_batch(self, batch: list[Log]) -> None:
+        with self._state_lock:
+            self._inflight += 1
+            self._idle_event.clear()
+
         try:
-            # send_events expects a list of Event objects
-            self.send_events(batch)
-            for _ in batch:
-                self.event_queue.task_done()
-            self.logger.info(
-                "Successfully sent batch of %d events", len(batch))
+            self.send_logs(batch)
+            self.logger.info("Successfully sent batch of %d logs", len(batch))
         except (requests.RequestException, ChirpierError) as exc:
-            self.logger.error("Failed to send events: %s", exc)
-            # Drop events if failed to send
-            for _ in batch:
-                self.event_queue.task_done()
+            self.logger.error("Failed to send logs: %s", exc)
         finally:
+            for _ in batch:
+                self.log_queue.task_done()
+            with self._state_lock:
+                self._inflight -= 1
+                if self.log_queue.unfinished_tasks == 0 and self._inflight == 0:
+                    self._idle_event.set()
             batch.clear()
 
-    def shutdown(self) -> None:
-        """Gracefully shut down the client."""
-        self._terminate_event.set()
-        self._worker.join()
-        self.event_queue.join()
-
-    def send_events(self, events: list[Event]) -> None:
-        """Send events to the API."""
+    def send_logs(self, entries: list[Log]) -> None:
+        """Send logs to Chirpier with retry and exponential backoff."""
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.config.api_key.strip()}"
+            "Authorization": f"Bearer {self.config.api_key}",
         }
+
+        payload = [entry.to_dict() for entry in entries]
+
         for attempt in range(self.config.retries + 1):
             try:
                 response = requests.post(
                     self.config.api_endpoint,
-                    json=[event.to_dict() for event in events],
+                    json=payload,
                     headers=headers,
-                    timeout=self.config.timeout
+                    timeout=self.config.timeout,
                 )
                 if response.ok:
                     return
+
                 if response.status_code == 429 or response.status_code >= 500:
                     if attempt < self.config.retries:
-                        # Cap exponential backoff at 30 seconds
-                        backoff = min(2 ** attempt, 30)
-                        if response.status_code == 429 and 'Retry-After' in response.headers:
+                        backoff = min(2**attempt, 30) + random.uniform(
+                            0, 0.3 * min(2**attempt, 30)
+                        )
+                        if (
+                            response.status_code == 429
+                            and "Retry-After" in response.headers
+                        ):
                             try:
-                                backoff = int(response.headers['Retry-After'])
+                                backoff = float(response.headers["Retry-After"])
                             except (ValueError, TypeError):
                                 pass
                         time.sleep(backoff)
                         continue
+
                 raise requests.RequestException(f"HTTP {response.status_code}")
-            except requests.RequestException as e:
-                logging.error("Request failed: %s", e)
+            except requests.RequestException:
                 if attempt == self.config.retries:
-                    logging.error(
-                        "Failed to send request after retries: %s", e)
-                    raise  # Re-raise to be caught by _flush_batch
-                # Cap exponential backoff at 30 seconds
-                time.sleep(min(2 ** attempt, 30))
+                    raise
+                backoff = min(2**attempt, 30) + random.uniform(
+                    0, 0.3 * min(2**attempt, 30)
+                )
+                time.sleep(backoff)
+
+    def list_events(self) -> list[dict]:
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/events",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_event(self, event_id: str) -> dict:
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/events/{event_id.strip()}",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_event(self, event_id: str, payload: dict) -> dict:
+        response = requests.put(
+            f"{self.config.servicer_endpoint}/events/{event_id.strip()}",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_policies(self) -> list[dict]:
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/policies",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def create_policy(self, payload: dict) -> dict:
+        response = requests.post(
+            f"{self.config.servicer_endpoint}/policies",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_alerts(self, status: str | None = None) -> list[dict]:
+        params = {"status": status} if status else None
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/alerts",
+            params=params,
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def acknowledge_alert(self, alert_id: str) -> dict:
+        response = requests.post(
+            f"{self.config.servicer_endpoint}/alerts/{alert_id.strip()}/acknowledge",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def resolve_alert(self, alert_id: str) -> dict:
+        response = requests.post(
+            f"{self.config.servicer_endpoint}/alerts/{alert_id.strip()}/resolve",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def archive_alert(self, alert_id: str) -> dict:
+        response = requests.post(
+            f"{self.config.servicer_endpoint}/alerts/{alert_id.strip()}/archive",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def test_webhook(self, webhook_id: str) -> None:
+        response = requests.post(
+            f"{self.config.servicer_endpoint}/webhooks/{webhook_id.strip()}/test",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+
+    def get_alert_deliveries(
+        self,
+        alert_id: str,
+        limit: int | None = None,
+        offset: int | None = None,
+        kind: str | None = None,
+    ) -> list[dict]:
+        params = {}
+        if kind is not None:
+            params["kind"] = kind
+        if limit is not None:
+            params["limit"] = limit
+        if offset is not None:
+            params["offset"] = offset
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/alerts/{alert_id.strip()}/deliveries",
+            params=params or None,
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_event_logs(
+        self,
+        event_id: str,
+        period: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[dict]:
+        params = {}
+        if period:
+            params["period"] = period
+        if limit is not None:
+            params["limit"] = limit
+        if offset is not None:
+            params["offset"] = offset
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/events/{event_id.strip()}/logs",
+            params=params or None,
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 class Chirpier:
-    """Manager for the global Chirpier client."""
-    _client = None
+    """Global singleton manager for package-level usage."""
+
+    _client: ClassVar[Client | None] = None
 
     @classmethod
-    def initialize(cls, api_key: str,
-                   region: str = "events",
-                   log_level: int = logging.NOTSET) -> None:
-        """Initialize the global Chirpier client."""
+    def initialize(cls, config: Config | None = None, **kwargs) -> None:
         if cls._client is not None:
             raise ChirpierError("Chirpier SDK is already initialized")
-        cls._client = Client(
-            Config(api_key, region, log_level=log_level))
+
+        client_config = config if config is not None else Config(**kwargs)
+        cls._client = Client(client_config)
 
     @classmethod
-    def monitor(cls, event: Event) -> None:
-        """Monitor an event using the global client."""
+    def log_event(cls, entry: Log) -> None:
         if cls._client is None:
             raise ChirpierError(
-                "Chirpier SDK is not initialized. Please call initialize() first")
-        cls._client.monitor(event)
+                "Chirpier SDK is not initialized. Please call initialize() first"
+            )
+        cls._client.log(entry)
+
+    @classmethod
+    def flush(cls) -> None:
+        if cls._client is None:
+            raise ChirpierError(
+                "Chirpier SDK is not initialized. Please call initialize() first"
+            )
+        cls._client.flush()
 
     @classmethod
     def stop(cls) -> None:
-        """Stop the global client."""
         if cls._client is not None:
             cls._client.shutdown()
             cls._client = None
 
-# Usage
-# Chirpier.initialize(api_key)
-# Chirpier.monitor(event)
-# Chirpier.stop()
+
+def initialize(config: Config | None = None, **kwargs) -> None:
+    """Initialize global singleton client."""
+    Chirpier.initialize(config=config, **kwargs)
+
+
+def log_event(entry: Log) -> None:
+    """Queue a log using the global singleton client."""
+    Chirpier.log_event(entry)
+
+
+def flush() -> None:
+    """Flush queued logs for the global singleton client."""
+    Chirpier.flush()
+
+
+def stop() -> None:
+    """Stop the global singleton client."""
+    Chirpier.stop()
+
+
+def new_client(config: Config | None = None, **kwargs) -> Client:
+    """Create a standalone client instance (recommended)."""
+    client_config = config if config is not None else Config(**kwargs)
+    return Client(client_config)

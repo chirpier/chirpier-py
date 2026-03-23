@@ -1,32 +1,23 @@
-"""This module provides an example of how to use the Chirpier SDK."""
+"""Example usage for chirpier-py."""
 
-from urllib.error import HTTPError
-import time
-try:
-    from chirpier import Chirpier, Event
-except ImportError:
-    print("Error: Unable to import 'chirpier'. Make sure it's installed correctly.")
-    exit(1)
+from datetime import datetime, timezone
+
+from chirpier import Chirpier, Log
 
 
-def main():
-    """Main function to run the example."""
-    # Initialize the client
-    Chirpier.initialize(api_key="your-api-key", region="us-west")
-
-    # Send the event
-    try:
-        Chirpier.monitor(Event(
-            group_id="bfd9299d-817a-452f-bc53-6e154f2281fc",
-            stream_name="My measurement",
-            value=1
-        ))
-        print("Event sent successfully!")
-    except (ConnectionError, HTTPError) as e:
-        print(f"Failed to send event: {e}")
-
-    # Wait
-    time.sleep(1)
+def main() -> None:
+    Chirpier.initialize(api_key="chp_your_api_key")
+    Chirpier.log_event(
+        Log(
+            agent_id="api.worker",
+            event="request_finished",
+            value=1,
+            occurred_at=datetime.now(timezone.utc),
+            meta={"path": "/v1.0/logs", "status": "ok"},
+        )
+    )
+    Chirpier.flush()
+    Chirpier.stop()
 
 
 if __name__ == "__main__":

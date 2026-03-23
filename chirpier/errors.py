@@ -1,20 +1,16 @@
 """This module provides error classes for the Chirpier SDK."""
 
+from __future__ import annotations
+
 
 class ChirpierError(Exception):
     """
-    Custom exception class for Chirpier errors.
+    Custom exception class for Chirpier SDK errors.
 
-    Attributes:
-        message (str): The error message.
+    This exception is raised for SDK-specific errors such as initialization
+    failures, queue overflow, or configuration issues.
+
+    The error message is available via str(exception) or exception.args[0].
     """
 
-    def __init__(self, message):
-        """
-        Initializes a ChirpierError instance.
-
-        Args:
-            message (str): The error message.
-        """
-        super().__init__(message)
-        self.message = message
+    pass  # No need for custom __init__, Exception handles it perfectly
