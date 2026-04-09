@@ -54,14 +54,32 @@ class TestClient(unittest.TestCase):
     def test_global_log_event(self):
         Chirpier.initialize(api_key="chp_test_key")
         Chirpier.log_event(
-            Log(event="request_finished", value=1, agent_id="api.worker")
+            Log(event="request_finished", value=1, agent="api.worker")
         )
         Chirpier.flush()
 
         self.assertTrue(self.mock_requests.post.called)
         call_kwargs = self.mock_requests.post.call_args.kwargs
         self.assertEqual(call_kwargs["json"][0]["event"], "request_finished")
-        self.assertEqual(call_kwargs["json"][0]["agent_id"], "api.worker")
+        self.assertEqual(call_kwargs["json"][0]["agent"], "api.worker")
+        self.assertIn("log_id", call_kwargs["json"][0])
+
+    def test_global_log_event_preserves_log_id(self):
+        Chirpier.initialize(api_key="chp_test_key")
+        Chirpier.log_event(
+            Log(
+                event="request_finished",
+                value=1,
+                log_id="9f97d65f-fb30-4062-b4d0-8617c03fe4f6",
+            )
+        )
+        Chirpier.flush()
+
+        call_kwargs = self.mock_requests.post.call_args.kwargs
+        self.assertEqual(
+            call_kwargs["json"][0]["log_id"],
+            "9f97d65f-fb30-4062-b4d0-8617c03fe4f6",
+        )
 
     def test_client_instance_api(self):
         client = Client(Config(api_key="chp_client_key", flush_delay=0.05))
@@ -85,13 +103,13 @@ class TestClient(unittest.TestCase):
         finally:
             client.close()
 
-    def test_agent_id_whitespace_omitted(self):
+    def test_agent_whitespace_omitted(self):
         Chirpier.initialize(api_key="chp_test_key")
-        Chirpier.log_event(Log(event="request_finished", value=1, agent_id="   "))
+        Chirpier.log_event(Log(event="request_finished", value=1, agent="   "))
         Chirpier.flush()
 
         call_kwargs = self.mock_requests.post.call_args.kwargs
-        self.assertNotIn("agent_id", call_kwargs["json"][0])
+        self.assertNotIn("agent", call_kwargs["json"][0])
 
     def test_occurred_at_in_payload(self):
         Chirpier.initialize(api_key="chp_test_key")

@@ -9,7 +9,7 @@ def main() -> None:
     Chirpier.initialize(api_key="chp_your_api_key")
     Chirpier.log_event(
         Log(
-            agent_id="api.worker",
+            agent="api.worker",
             event="request_finished",
             value=1,
             occurred_at=datetime.now(timezone.utc),

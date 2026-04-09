@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 import json
 import math
 from typing import Any
+from uuid import UUID
+from uuid6 import uuid7
 
 
 @dataclass(slots=True)
@@ -15,7 +17,8 @@ class Log:
 
     event: str
     value: float | int
-    agent_id: str | None = None
+    agent: str | None = None
+    log_id: str | None = None
     meta: Any = None
     occurred_at: datetime | str | None = None
 
@@ -29,10 +32,26 @@ class Log:
         if isinstance(self.value, float) and not math.isfinite(self.value):
             raise ValueError("value must be finite")
 
-        if self.agent_id is not None:
-            if not isinstance(self.agent_id, str):
-                raise ValueError("agent_id must be a string when provided")
-            self.agent_id = self.agent_id.strip() or None
+        if self.agent is not None:
+            if not isinstance(self.agent, str):
+                raise ValueError("agent must be a string when provided")
+            self.agent = self.agent.strip() or None
+
+        if self.log_id is None:
+            self.log_id = str(uuid7())
+        elif not isinstance(self.log_id, str):
+            raise ValueError("log_id must be a UUID string when provided")
+        else:
+            self.log_id = self.log_id.strip()
+            if not self.log_id:
+                self.log_id = str(uuid7())
+            else:
+                try:
+                    self.log_id = str(UUID(self.log_id))
+                except ValueError as exc:
+                    raise ValueError(
+                        "log_id must be a UUID string when provided"
+                    ) from exc
 
         if self.meta is not None:
             try:
@@ -68,8 +87,8 @@ class Log:
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
-        if payload["agent_id"] is None:
-            payload.pop("agent_id")
+        if payload["agent"] is None:
+            payload.pop("agent")
         if payload["meta"] is None:
             payload.pop("meta")
         if payload["occurred_at"] is None:

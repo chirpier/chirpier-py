@@ -19,7 +19,7 @@ pip install chirpier
 from chirpier import Chirpier, Log
 
 Chirpier.initialize(api_key="chp_your_api_key")
-Chirpier.log_event(Log(event="tool.errors.count", value=1, agent_id="openclaw.main", meta={"tool_name": "browser.open"}))
+Chirpier.log_event(Log(log_id="9f97d65f-fb30-4062-b4d0-8617c03fe4f6", event="tool.errors.count", value=1, agent="openclaw.main", meta={"tool_name": "browser.open"}))
 Chirpier.flush()
 Chirpier.stop()
 ```
@@ -30,7 +30,7 @@ Chirpier.stop()
 from chirpier import new_client, Log
 
 client = new_client(api_key="chp_your_api_key")
-client.log(Log(event="task.duration_ms", value=420, agent_id="openclaw.main", meta={"task_name": "email_triage"}))
+client.log(Log(event="task.duration_ms", value=420, agent="openclaw.main", meta={"task_name": "email_triage"}))
 client.flush()
 client.close()
 ```
@@ -48,7 +48,7 @@ client.close()
 - `timeout` (float, optional): HTTP timeout in seconds.
 - `batch_size` (int, optional): Flush threshold.
 - `flush_delay` (float, optional): Worker flush interval in seconds.
-- `queue_size` (int, optional): In-memory queue capacity.
+- `queue_size` (int, optional): In-memory queue capacity. `0` means unbounded and is the default.
 - `log_level` (int, optional): Python logging level.
 
 API key resolution precedence when `api_key` is omitted:
@@ -59,11 +59,13 @@ API key resolution precedence when `api_key` is omitted:
 Default ingest endpoint: `https://logs.chirpier.co/v1.0/logs`.
 Default servicer endpoint: `https://api.chirpier.co/v1.0`.
 The same bearer token is used for both ingest and servicer APIs.
+Queued logs are not dropped locally because of queue capacity or retry exhaustion.
 
 ### Log
 
 `Log` fields:
-- `agent_id` (str, optional): Free-form agent identifier text.
+- `agent` (str, optional): Free-form agent identifier text.
+- `log_id` (str, optional): UUID idempotency key for the log. Generated automatically when omitted.
 - `event` (str, required): Event name.
 - `value` (number, required): Numeric value.
 - `occurred_at` (datetime | str, optional): Event occurrence timestamp.
@@ -75,7 +77,7 @@ Example with `occurred_at`:
 from datetime import datetime, timezone
 
 entry = Log(
-    agent_id="openclaw.main",
+    agent="openclaw.main",
     event="tokens.used",
     value=1530,
     occurred_at=datetime(2026, 3, 5, 14, 30, 0, tzinfo=timezone.utc),
@@ -83,7 +85,8 @@ entry = Log(
 ```
 
 Notes:
-- `agent_id` whitespace-only values are treated as omitted.
+- `agent` whitespace-only values are treated as omitted.
+- `log_id` blank values are treated as omitted and replaced with a generated UUIDv4.
 - `event` must be non-empty after trimming.
 - `occurred_at` must be within the last 30 days and no more than 1 day in the future.
 - Use timezone-aware UTC datetimes or ISO8601 UTC strings, for example `2026-03-05T14:30:00Z`.
@@ -97,9 +100,7 @@ Notes:
 events = client.list_events()
 event_def = client.get_event(events[0]["event_id"])
 updated = client.update_event(event_def["event_id"], {
-    "title": "OpenClaw Tool Errors",
-    "semantic_class": "error_count",
-    "default_aggregate": "sum",
+    "description": "OpenClaw Tool Errors",
 })
 ```
 

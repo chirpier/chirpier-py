@@ -4,22 +4,32 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import unittest
+from uuid import UUID, uuid4
 
 from chirpier.log import Log
 
 
 class TestLog(unittest.TestCase):
     def test_valid_log(self):
-        entry = Log(event="request_finished", value=1, agent_id="api.worker")
+        entry = Log(event="request_finished", value=1, agent="api.worker")
         payload = entry.to_dict()
         self.assertEqual(payload["event"], "request_finished")
         self.assertEqual(payload["value"], 1)
-        self.assertEqual(payload["agent_id"], "api.worker")
+        self.assertEqual(payload["agent"], "api.worker")
+        parsed = UUID(payload["log_id"])
+        self.assertIsInstance(parsed, UUID)
+        self.assertEqual(parsed.version, 7)
 
-    def test_agent_id_whitespace_omitted(self):
-        entry = Log(event="request_finished", value=1, agent_id="   ")
+    def test_preserves_provided_log_id(self):
+        log_id = str(uuid4())
+        entry = Log(event="request_finished", value=1, log_id=log_id)
         payload = entry.to_dict()
-        self.assertNotIn("agent_id", payload)
+        self.assertEqual(payload["log_id"], log_id)
+
+    def test_agent_whitespace_omitted(self):
+        entry = Log(event="request_finished", value=1, agent="   ")
+        payload = entry.to_dict()
+        self.assertNotIn("agent", payload)
 
     def test_meta_json_encodable(self):
         entry = Log(event="request_finished", value=1, meta={"path": "/v1.0/logs"})
@@ -39,6 +49,10 @@ class TestLog(unittest.TestCase):
     def test_invalid_meta(self):
         with self.assertRaises(ValueError):
             Log(event="x", value=1, meta=object())
+
+    def test_invalid_log_id(self):
+        with self.assertRaises(ValueError):
+            Log(event="x", value=1, log_id="not-a-uuid")
 
     def test_invalid_occurred_at_out_of_range(self):
         with self.assertRaises(ValueError):

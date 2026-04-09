@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from queue import Empty, Full, Queue
+from queue import Empty, Queue
 import random
 from threading import Event as ThreadEvent
 from threading import Lock, Thread
@@ -33,7 +33,7 @@ class Config:
     timeout: int | float = 10
     batch_size: int = 500
     flush_delay: float = 0.5
-    queue_size: int = 5000
+    queue_size: int = 0
     log_level: int = logging.NOTSET
 
     def __post_init__(self) -> None:
@@ -45,8 +45,8 @@ class Config:
             raise ValueError("batch_size must be positive")
         if self.flush_delay < 0:
             raise ValueError("flush_delay must be non-negative")
-        if self.queue_size <= 0:
-            raise ValueError("queue_size must be positive")
+        if self.queue_size < 0:
+            raise ValueError("queue_size must be non-negative")
         if not isinstance(self.api_endpoint, str) or not self.api_endpoint.strip():
             raise ValueError("api_endpoint must be a non-empty string")
 
@@ -106,15 +106,8 @@ class Client:
             raise ValueError("entry must be an instance of Log")
 
         with self._queue_lock:
-            if self.log_queue.full():
-                raise ChirpierError(
-                    f"Log queue is full (max size: {self.config.queue_size})"
-                )
-            try:
-                self.log_queue.put(entry, block=True, timeout=self.config.timeout)
-                self._idle_event.clear()
-            except Full as exc:
-                raise ChirpierError("Failed to queue log: timeout") from exc
+            self.log_queue.put(entry)
+            self._idle_event.clear()
 
     def flush(self) -> None:
         """Block until currently queued logs are processed."""
@@ -171,6 +164,8 @@ class Client:
             self.logger.info("Successfully sent batch of %d logs", len(batch))
         except (requests.RequestException, ChirpierError) as exc:
             self.logger.error("Failed to send logs: %s", exc)
+            for entry in batch:
+                self.log_queue.put(entry)
         finally:
             for _ in batch:
                 self.log_queue.task_done()
