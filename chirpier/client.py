@@ -229,6 +229,19 @@ class Client:
         response.raise_for_status()
         return response.json()
 
+    def create_event(self, payload: dict) -> dict:
+        response = requests.post(
+            f"{self.config.servicer_endpoint}/events",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def get_event(self, event_id: str) -> dict:
         response = requests.get(
             f"{self.config.servicer_endpoint}/events/{event_id.strip()}",
@@ -273,11 +286,42 @@ class Client:
         response.raise_for_status()
         return response.json()
 
+    def get_policy(self, policy_id: str) -> dict:
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/policies/{policy_id.strip()}",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_policy(self, policy_id: str, payload: dict) -> dict:
+        response = requests.put(
+            f"{self.config.servicer_endpoint}/policies/{policy_id.strip()}",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def list_alerts(self, status: str | None = None) -> list[dict]:
         params = {"status": status} if status else None
         response = requests.get(
             f"{self.config.servicer_endpoint}/alerts",
             params=params,
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_alert(self, alert_id: str) -> dict:
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/alerts/{alert_id.strip()}",
             headers={"Authorization": f"Bearer {self.config.api_key}"},
             timeout=self.config.timeout,
         )
@@ -311,13 +355,75 @@ class Client:
         response.raise_for_status()
         return response.json()
 
-    def test_webhook(self, webhook_id: str) -> None:
-        response = requests.post(
-            f"{self.config.servicer_endpoint}/webhooks/{webhook_id.strip()}/test",
+    def list_destinations(self) -> list[dict]:
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/destinations",
             headers={"Authorization": f"Bearer {self.config.api_key}"},
             timeout=self.config.timeout,
         )
         response.raise_for_status()
+        return response.json()
+
+    def create_destination(self, payload: dict) -> dict:
+        response = requests.post(
+            f"{self.config.servicer_endpoint}/destinations",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_destination(self, destination_id: str) -> dict:
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/destinations/{destination_id.strip()}",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_destination(self, destination_id: str, payload: dict) -> dict:
+        response = requests.put(
+            f"{self.config.servicer_endpoint}/destinations/{destination_id.strip()}",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def test_destination(self, destination_id: str) -> dict:
+        response = requests.post(
+            f"{self.config.servicer_endpoint}/destinations/{destination_id.strip()}/test",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_event_analytics(
+        self,
+        event_id: str,
+        *,
+        view: str = "window",
+        period: str,
+        previous: str,
+    ) -> dict:
+        response = requests.get(
+            f"{self.config.servicer_endpoint}/events/{event_id.strip()}/analytics",
+            params={"view": view, "period": period, "previous": previous},
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
 
     def get_alert_deliveries(
         self,

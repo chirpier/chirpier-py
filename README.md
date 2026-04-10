@@ -32,6 +32,21 @@ from chirpier import new_client, Log
 client = new_client(api_key="chp_your_api_key")
 client.log(Log(event="task.duration_ms", value=420, agent="openclaw.main", meta={"task_name": "email_triage"}))
 client.flush()
+
+events = client.list_events()
+task_duration = next(
+    (event_def for event_def in events if event_def.get("agent") == "openclaw.main" and event_def.get("event") == "task.duration_ms"),
+    None,
+)
+
+if task_duration:
+    analytics = client.get_event_analytics(
+        task_duration["event_id"],
+        view="window",
+        period="1h",
+        previous="previous_window",
+    )
+
 client.close()
 ```
 <!-- docs:end quickstart -->
@@ -98,16 +113,26 @@ Notes:
 <!-- docs:start common-tasks -->
 ```python
 events = client.list_events()
+created = client.create_event({"event": "tool.errors.count"})
 event_def = client.get_event(events[0]["event_id"])
 updated = client.update_event(event_def["event_id"], {
     "description": "OpenClaw Tool Errors",
 })
+
+analytics = client.get_event_analytics(
+    event_def["event_id"],
+    view="window",
+    period="1h",
+    previous="previous_window",
+)
 ```
 
 ### Policy and alert helpers
 
 ```python
 policies = client.list_policies()
+policy = client.get_policy("pol_123")
+updated_policy = client.update_policy("pol_123", {"title": "Updated"})
 policy = client.create_policy({
     "event_id": "evt_123",
     "title": "OpenClaw tool errors spike",
@@ -118,12 +143,26 @@ policy = client.create_policy({
     "enabled": True,
 })
 alerts = client.list_alerts("triggered")
+alert = client.get_alert(alerts[0]["alert_id"])
 deliveries = client.get_alert_deliveries(alerts[0]["alert_id"], limit=20, offset=0, kind="alert")
 rollups = client.get_event_logs("evt_123", period="hour", limit=25, offset=0)
 ack = client.acknowledge_alert(alerts[0]["alert_id"])
 resolved = client.resolve_alert(ack["alert_id"])
 archived = client.archive_alert(resolved["alert_id"])
-client.test_webhook("whk_123")
+test_result = client.test_destination("whk_123")
+deliveries = client.get_alert_deliveries(test_result["alert_id"], kind="test")
+
+destination = client.create_destination(
+    {
+        "channel": "slack",
+        "url": "https://hooks.slack.com/services/T000/B000/secret",
+        "scope": "all",
+        "policy_ids": [],
+        "enabled": True,
+    }
+)
+details = client.get_destination(destination["destination_id"])
+updated_destination = client.update_destination(destination["destination_id"], {"enabled": False})
 ```
 <!-- docs:end common-tasks -->
 
@@ -131,33 +170,41 @@ client.test_webhook("whk_123")
 
 Use `new_client(...)` to create standalone clients without manually constructing `Config`.
 
-## Connector Setup Examples
+## Destination Setup Examples
 
-Create a Slack connector for OpenClaw alerts:
+Create a Slack destination for OpenClaw alerts:
 
 ```python
 import requests
 
 requests.post(
-    "https://api.chirpier.co/v1.0/webhooks",
+    "https://api.chirpier.co/v1.0/destinations",
     json={
         "url": "https://hooks.slack.com/services/T000/B000/secret",
-        "type": "slack",
+        "channel": "slack",
+        "scope": "all",
+        "policy_ids": [],
         "enabled": True,
     },
     headers={"Authorization": f"Bearer {api_key}"},
     timeout=10,
 )
+
+destination = client.create_destination({"channel": "slack", "scope": "all", "enabled": True})
+details = client.get_destination(destination["destination_id"])
+updated_destination = client.update_destination(destination["destination_id"], {"enabled": False})
 ```
 
-Create a Telegram connector for OpenClaw alerts:
+Create a Telegram destination for OpenClaw alerts:
 
 ```python
 requests.post(
-    "https://api.chirpier.co/v1.0/webhooks",
+    "https://api.chirpier.co/v1.0/destinations",
     json={
-        "type": "telegram",
+        "channel": "telegram",
         "enabled": True,
+        "scope": "all",
+        "policy_ids": [],
         "credentials": {
             "bot_token": "123456:telegram-bot-token",
             "chat_id": "987654321",
@@ -171,5 +218,6 @@ requests.post(
 Send a test notification:
 
 ```python
-client.test_webhook("whk_123")
+test_result = client.test_destination("whk_123")
+client.get_alert_deliveries(test_result["alert_id"], kind="test")
 ```

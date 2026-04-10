@@ -1,8 +1,6 @@
-#!/Users/gavinwong/Dev/chirpier/chirpier-py/.venv/bin/python3.12
-# -*- coding: utf-8 -*-
-import re
+#!/Users/gavinwong/Dev/chirpier/chirpier-py/.venv/bin/python3.14
 import sys
 from charset_normalizer.cli import cli_detect
 if __name__ == '__main__':
-    sys.argv[0] = re.sub(r'(-script\.pyw|\.exe)?$', '', sys.argv[0])
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
     sys.exit(cli_detect())

@@ -53,9 +53,7 @@ class TestClient(unittest.TestCase):
 
     def test_global_log_event(self):
         Chirpier.initialize(api_key="chp_test_key")
-        Chirpier.log_event(
-            Log(event="request_finished", value=1, agent="api.worker")
-        )
+        Chirpier.log_event(Log(event="request_finished", value=1, agent="api.worker"))
         Chirpier.flush()
 
         self.assertTrue(self.mock_requests.post.called)
@@ -153,6 +151,15 @@ class TestClient(unittest.TestCase):
         finally:
             client.shutdown()
 
+    def test_create_event_posts_to_servicer(self):
+        client = Client(Config(api_key="chp_test_key"))
+        try:
+            client.create_event({"event": "tool.errors.count"})
+            call_args = self.mock_requests.post.call_args.args
+            self.assertEqual(call_args[0], "https://api.chirpier.co/v1.0/events")
+        finally:
+            client.shutdown()
+
     def test_update_event_uses_same_bearer_token(self):
         client = Client(Config(api_key="chp_test_key"))
         try:
@@ -173,6 +180,17 @@ class TestClient(unittest.TestCase):
         finally:
             client.shutdown()
 
+    def test_get_alert_uses_servicer_endpoint(self):
+        client = Client(Config(api_key="chp_test_key"))
+        try:
+            client.get_alert("alrt_123")
+            call_args = self.mock_requests.get.call_args.args
+            self.assertEqual(
+                call_args[0], "https://api.chirpier.co/v1.0/alerts/alrt_123"
+            )
+        finally:
+            client.shutdown()
+
     def test_create_policy_posts_to_servicer(self):
         client = Client(Config(api_key="chp_test_key"))
         try:
@@ -189,6 +207,23 @@ class TestClient(unittest.TestCase):
         finally:
             client.shutdown()
 
+    def test_policy_read_and_update_use_servicer(self):
+        client = Client(Config(api_key="chp_test_key"))
+        try:
+            client.get_policy("pol_123")
+            call_args = self.mock_requests.get.call_args.args
+            self.assertEqual(
+                call_args[0], "https://api.chirpier.co/v1.0/policies/pol_123"
+            )
+
+            client.update_policy("pol_123", {"title": "Updated"})
+            put_args = self.mock_requests.put.call_args.args
+            self.assertEqual(
+                put_args[0], "https://api.chirpier.co/v1.0/policies/pol_123"
+            )
+        finally:
+            client.shutdown()
+
     def test_get_event_logs_uses_period_and_limit(self):
         client = Client(Config(api_key="chp_test_key"))
         try:
@@ -196,6 +231,20 @@ class TestClient(unittest.TestCase):
             call_kwargs = self.mock_requests.get.call_args.kwargs
             self.assertEqual(
                 call_kwargs["params"], {"period": "day", "limit": 10, "offset": 5}
+            )
+        finally:
+            client.shutdown()
+
+    def test_get_event_analytics_uses_required_query(self):
+        client = Client(Config(api_key="chp_test_key"))
+        try:
+            client.get_event_analytics(
+                "evt_123", view="window", period="1h", previous="previous_window"
+            )
+            call_kwargs = self.mock_requests.get.call_args.kwargs
+            self.assertEqual(
+                call_kwargs["params"],
+                {"view": "window", "period": "1h", "previous": "previous_window"},
             )
         finally:
             client.shutdown()
@@ -222,13 +271,46 @@ class TestClient(unittest.TestCase):
         finally:
             client.shutdown()
 
-    def test_test_webhook_posts_to_servicer(self):
+    def test_test_destination_posts_to_servicer(self):
+        self.mock_requests.post.return_value.json.return_value = {
+            "alert_id": "alrt_123",
+            "destination_id": "whk_123",
+            "status": "sent",
+        }
         client = Client(Config(api_key="chp_test_key"))
         try:
-            client.test_webhook("whk_123")
+            result = client.test_destination("whk_123")
             call_args = self.mock_requests.post.call_args.args
             self.assertEqual(
-                call_args[0], "https://api.chirpier.co/v1.0/webhooks/whk_123/test"
+                call_args[0], "https://api.chirpier.co/v1.0/destinations/whk_123/test"
+            )
+            self.assertEqual(result["alert_id"], "alrt_123")
+        finally:
+            client.shutdown()
+
+    def test_destination_crud_uses_servicer(self):
+        client = Client(Config(api_key="chp_test_key"))
+        try:
+            client.list_destinations()
+            call_args = self.mock_requests.get.call_args.args
+            self.assertEqual(call_args[0], "https://api.chirpier.co/v1.0/destinations")
+
+            client.create_destination(
+                {"channel": "slack", "scope": "all", "enabled": True}
+            )
+            post_args = self.mock_requests.post.call_args.args
+            self.assertEqual(post_args[0], "https://api.chirpier.co/v1.0/destinations")
+
+            client.get_destination("dst_123")
+            get_args = self.mock_requests.get.call_args.args
+            self.assertEqual(
+                get_args[0], "https://api.chirpier.co/v1.0/destinations/dst_123"
+            )
+
+            client.update_destination("dst_123", {"enabled": False})
+            put_args = self.mock_requests.put.call_args.args
+            self.assertEqual(
+                put_args[0], "https://api.chirpier.co/v1.0/destinations/dst_123"
             )
         finally:
             client.shutdown()
