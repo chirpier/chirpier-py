@@ -10,7 +10,15 @@ from .client import (
     new_client,
     stop,
 )
-from .errors import ChirpierError
+from .errors import (
+    ChirpierError,
+    ChirpierForbiddenError,
+    ChirpierInternalServerError,
+    ChirpierNonRetryableError,
+    ChirpierNotFoundError,
+    ChirpierServiceUnavailableError,
+    ChirpierUnauthorizedError,
+)
 from .log import Log
 
 __all__ = [
@@ -19,6 +27,12 @@ __all__ = [
     "Config",
     "Log",
     "ChirpierError",
+    "ChirpierNonRetryableError",
+    "ChirpierUnauthorizedError",
+    "ChirpierForbiddenError",
+    "ChirpierNotFoundError",
+    "ChirpierInternalServerError",
+    "ChirpierServiceUnavailableError",
     "initialize",
     "log_event",
     "new_client",

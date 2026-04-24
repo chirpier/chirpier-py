@@ -6,7 +6,16 @@ from datetime import datetime, timedelta, timezone
 import unittest
 from unittest.mock import MagicMock, patch
 
+import requests
+
 from chirpier import Chirpier, ChirpierError, Client, Config, Log, new_client
+from chirpier.errors import (
+    ChirpierForbiddenError,
+    ChirpierInternalServerError,
+    ChirpierNotFoundError,
+    ChirpierServiceUnavailableError,
+    ChirpierUnauthorizedError,
+)
 
 
 class TestClient(unittest.TestCase):
@@ -15,11 +24,13 @@ class TestClient(unittest.TestCase):
 
         self.requests_patcher = patch("chirpier.client.requests")
         self.mock_requests = self.requests_patcher.start()
+        self.mock_requests.RequestException = requests.RequestException
 
         mock_response = MagicMock()
         mock_response.ok = True
         mock_response.status_code = 200
         mock_response.headers = {}
+        mock_response.text = ""
         mock_response.json.return_value = []
         mock_response.raise_for_status.return_value = None
         self.mock_requests.post.return_value = mock_response
@@ -91,6 +102,186 @@ class TestClient(unittest.TestCase):
             self.assertEqual(call_kwargs["json"][0]["meta"]["ok"], True)
         finally:
             client.shutdown()
+
+    def test_send_logs_does_not_retry_401(self):
+        mock_response = MagicMock()
+        mock_response.ok = False
+        mock_response.status_code = 401
+        mock_response.headers = {}
+        mock_response.text = "invalid api key"
+        self.mock_requests.post.return_value = mock_response
+
+        client = Client(Config(api_key="chp_client_key", retries=5, flush_delay=0.05))
+        try:
+            with self.assertRaises(ChirpierUnauthorizedError) as ctx:
+                client.send_logs([Log(event="instance.log", value=1)])
+
+            self.assertEqual(str(ctx.exception), "HTTP 401: invalid api key")
+            self.assertEqual(self.mock_requests.post.call_count, 1)
+        finally:
+            client.shutdown()
+
+    def test_global_log_event_does_not_requeue_401(self):
+        mock_response = MagicMock()
+        mock_response.ok = False
+        mock_response.status_code = 401
+        mock_response.headers = {}
+        mock_response.text = "invalid api key"
+        self.mock_requests.post.return_value = mock_response
+
+        Chirpier.initialize(api_key="chp_test_key", flush_delay=0.05, retries=5)
+        Chirpier.log_event(Log(event="request_finished", value=1))
+        Chirpier.flush()
+
+        self.assertEqual(self.mock_requests.post.call_count, 1)
+        self.assertEqual(Chirpier._client.log_queue.qsize(), 0)
+
+    def test_send_logs_does_not_retry_403(self):
+        mock_response = MagicMock()
+        mock_response.ok = False
+        mock_response.status_code = 403
+        mock_response.headers = {}
+        mock_response.text = "project is disabled"
+        self.mock_requests.post.return_value = mock_response
+
+        client = Client(Config(api_key="chp_client_key", retries=5, flush_delay=0.05))
+        try:
+            with self.assertRaises(ChirpierForbiddenError) as ctx:
+                client.send_logs([Log(event="instance.log", value=1)])
+
+            self.assertEqual(str(ctx.exception), "HTTP 403: project is disabled")
+            self.assertEqual(self.mock_requests.post.call_count, 1)
+        finally:
+            client.shutdown()
+
+    def test_global_log_event_does_not_requeue_403(self):
+        mock_response = MagicMock()
+        mock_response.ok = False
+        mock_response.status_code = 403
+        mock_response.headers = {}
+        mock_response.text = "project is disabled"
+        self.mock_requests.post.return_value = mock_response
+
+        Chirpier.initialize(api_key="chp_test_key", flush_delay=0.05, retries=5)
+        Chirpier.log_event(Log(event="request_finished", value=1))
+        Chirpier.flush()
+
+        self.assertEqual(self.mock_requests.post.call_count, 1)
+        self.assertEqual(Chirpier._client.log_queue.qsize(), 0)
+
+    def test_send_logs_does_not_retry_404_500_503(self):
+        test_cases = [
+            (404, ChirpierNotFoundError),
+            (500, ChirpierInternalServerError),
+            (503, ChirpierServiceUnavailableError),
+        ]
+
+        for status_code, expected_error in test_cases:
+            with self.subTest(status_code=status_code):
+                self.mock_requests.post.reset_mock()
+                mock_response = MagicMock()
+                mock_response.ok = False
+                mock_response.status_code = status_code
+                mock_response.headers = {}
+                mock_response.text = ""
+                self.mock_requests.post.return_value = mock_response
+
+                client = Client(
+                    Config(api_key="chp_client_key", retries=5, flush_delay=0.05)
+                )
+                try:
+                    with self.assertRaises(expected_error):
+                        client.send_logs([Log(event="instance.log", value=1)])
+
+                    self.assertEqual(self.mock_requests.post.call_count, 1)
+                finally:
+                    client.shutdown()
+
+    def test_send_logs_retries_502(self):
+        responses = []
+        for _ in range(2):
+            response = MagicMock()
+            response.ok = False
+            response.status_code = 502
+            response.headers = {}
+            response.text = "bad gateway"
+            responses.append(response)
+
+        success_response = MagicMock()
+        success_response.ok = True
+        success_response.status_code = 200
+        success_response.headers = {}
+        success_response.text = ""
+        responses.append(success_response)
+
+        self.mock_requests.post.side_effect = responses
+
+        client = Client(Config(api_key="chp_client_key", retries=2, flush_delay=0.05))
+        try:
+            with patch("chirpier.client.time.sleep") as mock_sleep:
+                client.send_logs([Log(event="instance.log", value=1)])
+
+            self.assertEqual(self.mock_requests.post.call_count, 3)
+            self.assertEqual(mock_sleep.call_count, 2)
+        finally:
+            client.shutdown()
+
+    def test_send_logs_retries_429_with_delay(self):
+        responses = []
+        for _ in range(2):
+            response = MagicMock()
+            response.ok = False
+            response.status_code = 429
+            response.headers = {"Retry-After": "0.25"}
+            response.text = "rate limited"
+            responses.append(response)
+
+        failure_response = MagicMock()
+        failure_response.ok = False
+        failure_response.status_code = 429
+        failure_response.headers = {"Retry-After": "0.25"}
+        failure_response.text = "rate limited"
+        responses.append(failure_response)
+
+        self.mock_requests.post.side_effect = responses
+
+        client = Client(Config(api_key="chp_client_key", retries=2, flush_delay=0.05))
+        try:
+            with patch("chirpier.client.time.sleep") as mock_sleep:
+                with self.assertRaises(self.mock_requests.RequestException):
+                    client.send_logs([Log(event="instance.log", value=1)])
+
+            self.assertEqual(self.mock_requests.post.call_count, 3)
+            self.assertEqual(mock_sleep.call_count, 2)
+            self.assertEqual(mock_sleep.call_args_list[0].args[0], 0.25)
+            self.assertEqual(mock_sleep.call_args_list[1].args[0], 0.25)
+        finally:
+            client.shutdown()
+
+    def test_global_log_event_does_not_requeue_non_retryable_statuses(self):
+        for status_code in (401, 403, 404, 500, 503):
+            with self.subTest(status_code=status_code):
+                Chirpier._client = None
+                self.mock_requests.post.reset_mock()
+
+                mock_response = MagicMock()
+                mock_response.ok = False
+                mock_response.status_code = status_code
+                mock_response.headers = {}
+                mock_response.text = (
+                    "auth failed" if status_code in (401, 403) else ""
+                )
+                self.mock_requests.post.return_value = mock_response
+
+                Chirpier.initialize(api_key="chp_test_key", flush_delay=0.05, retries=5)
+                Chirpier.log_event(Log(event="request_finished", value=1))
+                Chirpier.flush()
+
+                self.assertEqual(self.mock_requests.post.call_count, 1)
+                self.assertEqual(Chirpier._client.log_queue.qsize(), 0)
+
+                Chirpier._client.shutdown()
+                Chirpier._client = None
 
     def test_new_client_factory(self):
         client = new_client(api_key="chp_factory_key", flush_delay=0.05)

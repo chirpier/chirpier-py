@@ -14,12 +14,55 @@ from urllib.parse import urlparse
 
 import requests
 
-from .errors import ChirpierError
+from .errors import (
+    ChirpierError,
+    ChirpierForbiddenError,
+    ChirpierInternalServerError,
+    ChirpierNonRetryableError,
+    ChirpierNotFoundError,
+    ChirpierServiceUnavailableError,
+    ChirpierUnauthorizedError,
+)
 from .log import Log
 from .utils import is_valid_api_key, resolve_api_key
 
 DEFAULT_API_ENDPOINT = "https://logs.chirpier.co/v1.0/logs"
 DEFAULT_SERVICER_ENDPOINT = "https://api.chirpier.co/v1.0"
+
+
+def classify_log_response_status(status_code: int) -> str:
+    if status_code == 429:
+        return "retry_after"
+    if status_code >= 500:
+        if status_code in (500, 503):
+            return "non_retryable"
+        return "retryable"
+    if status_code >= 400:
+        return "non_retryable"
+    return "success"
+
+
+def get_response_body_text(response: requests.Response) -> str:
+    body = response.text if isinstance(response.text, str) else ""
+    return body.strip()
+
+
+def build_non_retryable_error(status_code: int, body_text: str) -> ChirpierNonRetryableError:
+    message = f"HTTP {status_code}"
+    if body_text:
+        message = f"{message}: {body_text}"
+
+    if status_code == 401:
+        return ChirpierUnauthorizedError(message)
+    if status_code == 403:
+        return ChirpierForbiddenError(message)
+    if status_code == 404:
+        return ChirpierNotFoundError(message)
+    if status_code == 500:
+        return ChirpierInternalServerError(message)
+    if status_code == 503:
+        return ChirpierServiceUnavailableError(message)
+    return ChirpierNonRetryableError(message)
 
 
 @dataclass(slots=True)
@@ -162,6 +205,8 @@ class Client:
         try:
             self.send_logs(batch)
             self.logger.info("Successfully sent batch of %d logs", len(batch))
+        except ChirpierNonRetryableError as exc:
+            self.logger.error("Failed to send logs: %s", exc)
         except (requests.RequestException, ChirpierError) as exc:
             self.logger.error("Failed to send logs: %s", exc)
             for entry in batch:
@@ -195,15 +240,18 @@ class Client:
                 if response.ok:
                     return
 
-                if response.status_code == 429 or response.status_code >= 500:
+                status_policy = classify_log_response_status(response.status_code)
+                body_text = get_response_body_text(response)
+
+                if status_policy == "non_retryable":
+                    raise build_non_retryable_error(response.status_code, body_text)
+
+                if status_policy in ("retry_after", "retryable"):
                     if attempt < self.config.retries:
                         backoff = min(2**attempt, 30) + random.uniform(
                             0, 0.3 * min(2**attempt, 30)
                         )
-                        if (
-                            response.status_code == 429
-                            and "Retry-After" in response.headers
-                        ):
+                        if status_policy == "retry_after" and "Retry-After" in response.headers:
                             try:
                                 backoff = float(response.headers["Retry-After"])
                             except (ValueError, TypeError):
@@ -211,7 +259,12 @@ class Client:
                         time.sleep(backoff)
                         continue
 
-                raise requests.RequestException(f"HTTP {response.status_code}")
+                message = f"HTTP {response.status_code}"
+                if body_text:
+                    message = f"{message}: {body_text}"
+                raise requests.RequestException(message)
+            except ChirpierNonRetryableError:
+                raise
             except requests.RequestException:
                 if attempt == self.config.retries:
                     raise

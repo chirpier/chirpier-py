@@ -14,3 +14,27 @@ class ChirpierError(Exception):
     """
 
     pass  # No need for custom __init__, Exception handles it perfectly
+
+
+class ChirpierNonRetryableError(ChirpierError):
+    """Raised when an ingest response should not be retried."""
+
+
+class ChirpierUnauthorizedError(ChirpierNonRetryableError):
+    """Raised when the API rejects a request with HTTP 401."""
+
+
+class ChirpierForbiddenError(ChirpierNonRetryableError):
+    """Raised when the API rejects a request with HTTP 403."""
+
+
+class ChirpierNotFoundError(ChirpierNonRetryableError):
+    """Raised when the API rejects a request with HTTP 404."""
+
+
+class ChirpierInternalServerError(ChirpierNonRetryableError):
+    """Raised when the API rejects a request with HTTP 500."""
+
+
+class ChirpierServiceUnavailableError(ChirpierNonRetryableError):
+    """Raised when the API rejects a request with HTTP 503."""
