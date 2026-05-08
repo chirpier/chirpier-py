@@ -23,11 +23,13 @@ from .errors import (
     ChirpierServiceUnavailableError,
     ChirpierUnauthorizedError,
 )
+from . import __version__
 from .log import Log
 from .utils import is_valid_api_key, resolve_api_key
 
 DEFAULT_API_ENDPOINT = "https://logs.chirpier.co/v1.0/logs"
 DEFAULT_SERVICER_ENDPOINT = "https://api.chirpier.co/v1.0"
+USER_AGENT = f"chirpier-py/{__version__}"
 
 
 def classify_log_response_status(status_code: int) -> str:
@@ -169,6 +171,18 @@ class Client:
         """Alias for shutdown()."""
         self.shutdown()
 
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.config.api_key}",
+            "User-Agent": USER_AGENT,
+        }
+
+    def _json_headers(self) -> dict[str, str]:
+        return {
+            **self._headers(),
+            "Content-Type": "application/json",
+        }
+
     def _process_logs(self) -> None:
         batch: list[Log] = []
 
@@ -222,10 +236,7 @@ class Client:
 
     def send_logs(self, entries: list[Log]) -> None:
         """Send logs to Chirpier with retry and exponential backoff."""
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.config.api_key}",
-        }
+        headers = self._json_headers()
 
         payload = [entry.to_dict() for entry in entries]
 
@@ -276,7 +287,7 @@ class Client:
     def list_events(self) -> list[dict]:
         response = requests.get(
             f"{self.config.servicer_endpoint}/events",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -286,10 +297,7 @@ class Client:
         response = requests.post(
             f"{self.config.servicer_endpoint}/events",
             json=payload,
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=self._json_headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -298,7 +306,7 @@ class Client:
     def get_event(self, event_id: str) -> dict:
         response = requests.get(
             f"{self.config.servicer_endpoint}/events/{event_id.strip()}",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -308,10 +316,7 @@ class Client:
         response = requests.put(
             f"{self.config.servicer_endpoint}/events/{event_id.strip()}",
             json=payload,
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=self._json_headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -320,7 +325,7 @@ class Client:
     def list_policies(self) -> list[dict]:
         response = requests.get(
             f"{self.config.servicer_endpoint}/policies",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -330,10 +335,7 @@ class Client:
         response = requests.post(
             f"{self.config.servicer_endpoint}/policies",
             json=payload,
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=self._json_headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -342,7 +344,7 @@ class Client:
     def get_policy(self, policy_id: str) -> dict:
         response = requests.get(
             f"{self.config.servicer_endpoint}/policies/{policy_id.strip()}",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -352,10 +354,7 @@ class Client:
         response = requests.put(
             f"{self.config.servicer_endpoint}/policies/{policy_id.strip()}",
             json=payload,
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=self._json_headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -366,7 +365,7 @@ class Client:
         response = requests.get(
             f"{self.config.servicer_endpoint}/alerts",
             params=params,
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -375,7 +374,7 @@ class Client:
     def get_alert(self, alert_id: str) -> dict:
         response = requests.get(
             f"{self.config.servicer_endpoint}/alerts/{alert_id.strip()}",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -384,7 +383,7 @@ class Client:
     def acknowledge_alert(self, alert_id: str) -> dict:
         response = requests.post(
             f"{self.config.servicer_endpoint}/alerts/{alert_id.strip()}/acknowledge",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -393,7 +392,7 @@ class Client:
     def resolve_alert(self, alert_id: str) -> dict:
         response = requests.post(
             f"{self.config.servicer_endpoint}/alerts/{alert_id.strip()}/resolve",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -402,7 +401,7 @@ class Client:
     def archive_alert(self, alert_id: str) -> dict:
         response = requests.post(
             f"{self.config.servicer_endpoint}/alerts/{alert_id.strip()}/archive",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -411,7 +410,7 @@ class Client:
     def list_destinations(self) -> list[dict]:
         response = requests.get(
             f"{self.config.servicer_endpoint}/destinations",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -421,10 +420,7 @@ class Client:
         response = requests.post(
             f"{self.config.servicer_endpoint}/destinations",
             json=payload,
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=self._json_headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -433,7 +429,7 @@ class Client:
     def get_destination(self, destination_id: str) -> dict:
         response = requests.get(
             f"{self.config.servicer_endpoint}/destinations/{destination_id.strip()}",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -443,10 +439,7 @@ class Client:
         response = requests.put(
             f"{self.config.servicer_endpoint}/destinations/{destination_id.strip()}",
             json=payload,
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=self._json_headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -455,7 +448,7 @@ class Client:
     def test_destination(self, destination_id: str) -> dict:
         response = requests.post(
             f"{self.config.servicer_endpoint}/destinations/{destination_id.strip()}/test",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -472,7 +465,7 @@ class Client:
         response = requests.get(
             f"{self.config.servicer_endpoint}/events/{event_id.strip()}/analytics",
             params={"view": view, "period": period, "previous": previous},
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -495,7 +488,7 @@ class Client:
         response = requests.get(
             f"{self.config.servicer_endpoint}/alerts/{alert_id.strip()}/deliveries",
             params=params or None,
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()
@@ -518,7 +511,7 @@ class Client:
         response = requests.get(
             f"{self.config.servicer_endpoint}/events/{event_id.strip()}/logs",
             params=params or None,
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
+            headers=self._headers(),
             timeout=self.config.timeout,
         )
         response.raise_for_status()

@@ -81,6 +81,8 @@ Queued logs are not dropped locally because of queue capacity or retry exhaustio
 The SDK retries network/transport failures, `429` responses, and retryable `5xx` responses such as `502` and `504`.
 It does not retry `401`, `403`, `404`, `500`, or `503`, and `401`/`403` errors surface the Chirpier response message when available.
 
+> **Important:** When all retry attempts are exhausted, logs are silently dropped. The SDK is designed to never block your application — if the Chirpier API is persistently unreachable, queued logs will be discarded rather than causing backpressure. Monitor your Chirpier dashboard to ensure logs are arriving as expected.
+
 ### Log
 
 `Log` fields:
