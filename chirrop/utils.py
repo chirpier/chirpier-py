@@ -1,4 +1,4 @@
-"""Utility helpers for the Chirpier SDK."""
+"""Utility helpers for the ChirrOp SDK."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import os
 
 
 def is_valid_api_key(token: str) -> bool:
-    """Validate that an API key uses the expected Chirpier prefix."""
+    """Validate that an API key uses the expected ChirrOp prefix."""
     return (
         isinstance(token, str) and token.startswith("chp_") and len(token) > len("chp_")
     )
@@ -36,11 +36,11 @@ def resolve_api_key(provided_key: str | None) -> str | None:
         if key:
             return key
 
-    env_key = os.getenv("CHIRPIER_API_KEY", "").strip()
+    env_key = os.getenv("CHIRROP_API_KEY", "").strip()
     if env_key:
         return env_key
 
-    dotenv_key = _read_dotenv_value("CHIRPIER_API_KEY")
+    dotenv_key = _read_dotenv_value("CHIRROP_API_KEY")
     return (
         dotenv_key.strip()
         if isinstance(dotenv_key, str) and dotenv_key.strip()

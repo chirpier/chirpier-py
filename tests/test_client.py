@@ -8,21 +8,21 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-from chirpier import Chirpier, ChirpierError, Client, Config, Log, new_client
-from chirpier.errors import (
-    ChirpierForbiddenError,
-    ChirpierInternalServerError,
-    ChirpierNotFoundError,
-    ChirpierServiceUnavailableError,
-    ChirpierUnauthorizedError,
+from chirrop import ChirrOp, ChirrOpError, Client, Config, Log, new_client
+from chirrop.errors import (
+    ChirrOpForbiddenError,
+    ChirrOpInternalServerError,
+    ChirrOpNotFoundError,
+    ChirrOpServiceUnavailableError,
+    ChirrOpUnauthorizedError,
 )
 
 
 class TestClient(unittest.TestCase):
     def setUp(self):
-        Chirpier._client = None
+        ChirrOp._client = None
 
-        self.requests_patcher = patch("chirpier.client.requests")
+        self.requests_patcher = patch("chirrop.client.requests")
         self.mock_requests = self.requests_patcher.start()
         self.mock_requests.RequestException = requests.RequestException
 
@@ -39,33 +39,33 @@ class TestClient(unittest.TestCase):
 
     def tearDown(self):
         self.requests_patcher.stop()
-        if Chirpier._client is not None:
-            Chirpier._client.shutdown()
-            Chirpier._client = None
+        if ChirrOp._client is not None:
+            ChirrOp._client.shutdown()
+            ChirrOp._client = None
 
     def test_initialize_invalid_key(self):
         with self.assertRaises(ValueError) as ctx:
-            Chirpier.initialize(api_key="invalid")
+            ChirrOp.initialize(api_key="invalid")
         self.assertEqual(str(ctx.exception), "Invalid API key: must start with 'chp_'")
 
     def test_initialize_twice(self):
-        Chirpier.initialize(api_key="chp_test_key")
-        with self.assertRaises(ChirpierError) as ctx:
-            Chirpier.initialize(api_key="chp_test_key")
-        self.assertEqual(str(ctx.exception), "Chirpier SDK is already initialized")
+        ChirrOp.initialize(api_key="chp_test_key")
+        with self.assertRaises(ChirrOpError) as ctx:
+            ChirrOp.initialize(api_key="chp_test_key")
+        self.assertEqual(str(ctx.exception), "ChirrOp SDK is already initialized")
 
     def test_log_event_without_init(self):
-        with self.assertRaises(ChirpierError) as ctx:
-            Chirpier.log_event(Log(event="test", value=1))
+        with self.assertRaises(ChirrOpError) as ctx:
+            ChirrOp.log_event(Log(event="test", value=1))
         self.assertEqual(
             str(ctx.exception),
-            "Chirpier SDK is not initialized. Please call initialize() first",
+            "ChirrOp SDK is not initialized. Please call initialize() first",
         )
 
     def test_global_log_event(self):
-        Chirpier.initialize(api_key="chp_test_key")
-        Chirpier.log_event(Log(event="request_finished", value=1, agent="api.worker"))
-        Chirpier.flush()
+        ChirrOp.initialize(api_key="chp_test_key")
+        ChirrOp.log_event(Log(event="request_finished", value=1, agent="api.worker"))
+        ChirrOp.flush()
 
         self.assertTrue(self.mock_requests.post.called)
         call_kwargs = self.mock_requests.post.call_args.kwargs
@@ -74,15 +74,15 @@ class TestClient(unittest.TestCase):
         self.assertIn("log_id", call_kwargs["json"][0])
 
     def test_global_log_event_preserves_log_id(self):
-        Chirpier.initialize(api_key="chp_test_key")
-        Chirpier.log_event(
+        ChirrOp.initialize(api_key="chp_test_key")
+        ChirrOp.log_event(
             Log(
                 event="request_finished",
                 value=1,
                 log_id="9f97d65f-fb30-4062-b4d0-8617c03fe4f6",
             )
         )
-        Chirpier.flush()
+        ChirrOp.flush()
 
         call_kwargs = self.mock_requests.post.call_args.kwargs
         self.assertEqual(
@@ -113,7 +113,7 @@ class TestClient(unittest.TestCase):
 
         client = Client(Config(api_key="chp_client_key", retries=5, flush_delay=0.05))
         try:
-            with self.assertRaises(ChirpierUnauthorizedError) as ctx:
+            with self.assertRaises(ChirrOpUnauthorizedError) as ctx:
                 client.send_logs([Log(event="instance.log", value=1)])
 
             self.assertEqual(str(ctx.exception), "HTTP 401: invalid api key")
@@ -129,12 +129,12 @@ class TestClient(unittest.TestCase):
         mock_response.text = "invalid api key"
         self.mock_requests.post.return_value = mock_response
 
-        Chirpier.initialize(api_key="chp_test_key", flush_delay=0.05, retries=5)
-        Chirpier.log_event(Log(event="request_finished", value=1))
-        Chirpier.flush()
+        ChirrOp.initialize(api_key="chp_test_key", flush_delay=0.05, retries=5)
+        ChirrOp.log_event(Log(event="request_finished", value=1))
+        ChirrOp.flush()
 
         self.assertEqual(self.mock_requests.post.call_count, 1)
-        self.assertEqual(Chirpier._client.log_queue.qsize(), 0)
+        self.assertEqual(ChirrOp._client.log_queue.qsize(), 0)
 
     def test_send_logs_does_not_retry_403(self):
         mock_response = MagicMock()
@@ -146,7 +146,7 @@ class TestClient(unittest.TestCase):
 
         client = Client(Config(api_key="chp_client_key", retries=5, flush_delay=0.05))
         try:
-            with self.assertRaises(ChirpierForbiddenError) as ctx:
+            with self.assertRaises(ChirrOpForbiddenError) as ctx:
                 client.send_logs([Log(event="instance.log", value=1)])
 
             self.assertEqual(str(ctx.exception), "HTTP 403: project is disabled")
@@ -162,18 +162,18 @@ class TestClient(unittest.TestCase):
         mock_response.text = "project is disabled"
         self.mock_requests.post.return_value = mock_response
 
-        Chirpier.initialize(api_key="chp_test_key", flush_delay=0.05, retries=5)
-        Chirpier.log_event(Log(event="request_finished", value=1))
-        Chirpier.flush()
+        ChirrOp.initialize(api_key="chp_test_key", flush_delay=0.05, retries=5)
+        ChirrOp.log_event(Log(event="request_finished", value=1))
+        ChirrOp.flush()
 
         self.assertEqual(self.mock_requests.post.call_count, 1)
-        self.assertEqual(Chirpier._client.log_queue.qsize(), 0)
+        self.assertEqual(ChirrOp._client.log_queue.qsize(), 0)
 
     def test_send_logs_does_not_retry_404_500_503(self):
         test_cases = [
-            (404, ChirpierNotFoundError),
-            (500, ChirpierInternalServerError),
-            (503, ChirpierServiceUnavailableError),
+            (404, ChirrOpNotFoundError),
+            (500, ChirrOpInternalServerError),
+            (503, ChirrOpServiceUnavailableError),
         ]
 
         for status_code, expected_error in test_cases:
@@ -218,7 +218,7 @@ class TestClient(unittest.TestCase):
 
         client = Client(Config(api_key="chp_client_key", retries=2, flush_delay=0.05))
         try:
-            with patch("chirpier.client.time.sleep") as mock_sleep:
+            with patch("chirrop.client.time.sleep") as mock_sleep:
                 client.send_logs([Log(event="instance.log", value=1)])
 
             self.assertEqual(self.mock_requests.post.call_count, 3)
@@ -247,7 +247,7 @@ class TestClient(unittest.TestCase):
 
         client = Client(Config(api_key="chp_client_key", retries=2, flush_delay=0.05))
         try:
-            with patch("chirpier.client.time.sleep") as mock_sleep:
+            with patch("chirrop.client.time.sleep") as mock_sleep:
                 with self.assertRaises(self.mock_requests.RequestException):
                     client.send_logs([Log(event="instance.log", value=1)])
 
@@ -261,7 +261,7 @@ class TestClient(unittest.TestCase):
     def test_global_log_event_does_not_requeue_non_retryable_statuses(self):
         for status_code in (401, 403, 404, 500, 503):
             with self.subTest(status_code=status_code):
-                Chirpier._client = None
+                ChirrOp._client = None
                 self.mock_requests.post.reset_mock()
 
                 mock_response = MagicMock()
@@ -273,15 +273,15 @@ class TestClient(unittest.TestCase):
                 )
                 self.mock_requests.post.return_value = mock_response
 
-                Chirpier.initialize(api_key="chp_test_key", flush_delay=0.05, retries=5)
-                Chirpier.log_event(Log(event="request_finished", value=1))
-                Chirpier.flush()
+                ChirrOp.initialize(api_key="chp_test_key", flush_delay=0.05, retries=5)
+                ChirrOp.log_event(Log(event="request_finished", value=1))
+                ChirrOp.flush()
 
                 self.assertEqual(self.mock_requests.post.call_count, 1)
-                self.assertEqual(Chirpier._client.log_queue.qsize(), 0)
+                self.assertEqual(ChirrOp._client.log_queue.qsize(), 0)
 
-                Chirpier._client.shutdown()
-                Chirpier._client = None
+                ChirrOp._client.shutdown()
+                ChirrOp._client = None
 
     def test_new_client_factory(self):
         client = new_client(api_key="chp_factory_key", flush_delay=0.05)
@@ -293,20 +293,20 @@ class TestClient(unittest.TestCase):
             client.close()
 
     def test_agent_whitespace_omitted(self):
-        Chirpier.initialize(api_key="chp_test_key")
-        Chirpier.log_event(Log(event="request_finished", value=1, agent="   "))
-        Chirpier.flush()
+        ChirrOp.initialize(api_key="chp_test_key")
+        ChirrOp.log_event(Log(event="request_finished", value=1, agent="   "))
+        ChirrOp.flush()
 
         call_kwargs = self.mock_requests.post.call_args.kwargs
         self.assertNotIn("agent", call_kwargs["json"][0])
 
     def test_occurred_at_in_payload(self):
-        Chirpier.initialize(api_key="chp_test_key")
+        ChirrOp.initialize(api_key="chp_test_key")
         occurred_at = datetime.now(timezone.utc) - timedelta(hours=1)
-        Chirpier.log_event(
+        ChirrOp.log_event(
             Log(event="request_finished", value=1, occurred_at=occurred_at)
         )
-        Chirpier.flush()
+        ChirrOp.flush()
 
         call_kwargs = self.mock_requests.post.call_args.kwargs
         self.assertIn("occurred_at", call_kwargs["json"][0])
@@ -338,7 +338,7 @@ class TestClient(unittest.TestCase):
         try:
             client.list_events()
             call_args = self.mock_requests.get.call_args.args
-            self.assertEqual(call_args[0], "https://api.chirpier.co/v1.0/events")
+            self.assertEqual(call_args[0], "https://api.chirrop.com/v1.0/events")
         finally:
             client.shutdown()
 
@@ -347,7 +347,7 @@ class TestClient(unittest.TestCase):
         try:
             client.create_event({"event": "tool.errors.count"})
             call_args = self.mock_requests.post.call_args.args
-            self.assertEqual(call_args[0], "https://api.chirpier.co/v1.0/events")
+            self.assertEqual(call_args[0], "https://api.chirrop.com/v1.0/events")
         finally:
             client.shutdown()
 
@@ -377,7 +377,7 @@ class TestClient(unittest.TestCase):
             client.get_alert("alrt_123")
             call_args = self.mock_requests.get.call_args.args
             self.assertEqual(
-                call_args[0], "https://api.chirpier.co/v1.0/alerts/alrt_123"
+                call_args[0], "https://api.chirrop.com/v1.0/alerts/alrt_123"
             )
         finally:
             client.shutdown()
@@ -394,7 +394,7 @@ class TestClient(unittest.TestCase):
                 }
             )
             call_args = self.mock_requests.post.call_args.args
-            self.assertEqual(call_args[0], "https://api.chirpier.co/v1.0/policies")
+            self.assertEqual(call_args[0], "https://api.chirrop.com/v1.0/policies")
         finally:
             client.shutdown()
 
@@ -404,13 +404,13 @@ class TestClient(unittest.TestCase):
             client.get_policy("pol_123")
             call_args = self.mock_requests.get.call_args.args
             self.assertEqual(
-                call_args[0], "https://api.chirpier.co/v1.0/policies/pol_123"
+                call_args[0], "https://api.chirrop.com/v1.0/policies/pol_123"
             )
 
             client.update_policy("pol_123", {"title": "Updated"})
             put_args = self.mock_requests.put.call_args.args
             self.assertEqual(
-                put_args[0], "https://api.chirpier.co/v1.0/policies/pol_123"
+                put_args[0], "https://api.chirrop.com/v1.0/policies/pol_123"
             )
         finally:
             client.shutdown()
@@ -457,7 +457,7 @@ class TestClient(unittest.TestCase):
             client.archive_alert("alrt_123")
             call_args = self.mock_requests.post.call_args.args
             self.assertEqual(
-                call_args[0], "https://api.chirpier.co/v1.0/alerts/alrt_123/archive"
+                call_args[0], "https://api.chirrop.com/v1.0/alerts/alrt_123/archive"
             )
         finally:
             client.shutdown()
@@ -473,7 +473,7 @@ class TestClient(unittest.TestCase):
             result = client.test_destination("whk_123")
             call_args = self.mock_requests.post.call_args.args
             self.assertEqual(
-                call_args[0], "https://api.chirpier.co/v1.0/destinations/whk_123/test"
+                call_args[0], "https://api.chirrop.com/v1.0/destinations/whk_123/test"
             )
             self.assertEqual(result["alert_id"], "alrt_123")
         finally:
@@ -484,24 +484,24 @@ class TestClient(unittest.TestCase):
         try:
             client.list_destinations()
             call_args = self.mock_requests.get.call_args.args
-            self.assertEqual(call_args[0], "https://api.chirpier.co/v1.0/destinations")
+            self.assertEqual(call_args[0], "https://api.chirrop.com/v1.0/destinations")
 
             client.create_destination(
                 {"channel": "slack", "scope": "all", "enabled": True}
             )
             post_args = self.mock_requests.post.call_args.args
-            self.assertEqual(post_args[0], "https://api.chirpier.co/v1.0/destinations")
+            self.assertEqual(post_args[0], "https://api.chirrop.com/v1.0/destinations")
 
             client.get_destination("dst_123")
             get_args = self.mock_requests.get.call_args.args
             self.assertEqual(
-                get_args[0], "https://api.chirpier.co/v1.0/destinations/dst_123"
+                get_args[0], "https://api.chirrop.com/v1.0/destinations/dst_123"
             )
 
             client.update_destination("dst_123", {"enabled": False})
             put_args = self.mock_requests.put.call_args.args
             self.assertEqual(
-                put_args[0], "https://api.chirpier.co/v1.0/destinations/dst_123"
+                put_args[0], "https://api.chirrop.com/v1.0/destinations/dst_123"
             )
         finally:
             client.shutdown()

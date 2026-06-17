@@ -1,4 +1,4 @@
-"""Log model for the Chirpier SDK."""
+"""Log model for the ChirrOp SDK."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from uuid6 import uuid7
 
 @dataclass(slots=True)
 class Log:
-    """Represents a log entry sent to Chirpier."""
+    """Represents a log entry sent to ChirrOp."""
 
     event: str
     value: float | int

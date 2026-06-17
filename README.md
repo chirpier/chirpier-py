@@ -1,12 +1,12 @@
-# Chirpier SDK
+# ChirrOp SDK
 
-The Chirpier SDK for Python sends OpenClaw-friendly flat events to Chirpier/Ingres with batching and retries.
+The ChirrOp SDK for Python sends OpenClaw-friendly flat events to ChirrOp/Ingres with batching and retries.
 
 ## Installation
 
 <!-- docs:start install -->
 ```bash
-pip install chirpier
+pip install chirrop
 ```
 <!-- docs:end install -->
 
@@ -16,18 +16,18 @@ pip install chirpier
 ### Global API
 
 ```python
-from chirpier import Chirpier, Log
+from chirrop import ChirrOp, Log
 
-Chirpier.initialize(api_key="chp_your_api_key")
-Chirpier.log_event(Log(log_id="9f97d65f-fb30-4062-b4d0-8617c03fe4f6", event="tool.errors.count", value=1, agent="openclaw.main", meta={"tool_name": "browser.open"}))
-Chirpier.flush()
-Chirpier.stop()
+ChirrOp.initialize(api_key="chp_your_api_key")
+ChirrOp.log_event(Log(log_id="9f97d65f-fb30-4062-b4d0-8617c03fe4f6", event="tool.errors.count", value=1, agent="openclaw.main", meta={"tool_name": "browser.open"}))
+ChirrOp.flush()
+ChirrOp.stop()
 ```
 
 ### Instance API (Recommended)
 
 ```python
-from chirpier import new_client, Log
+from chirrop import new_client, Log
 
 client = new_client(api_key="chp_your_api_key")
 client.log(Log(event="task.duration_ms", value=420, agent="openclaw.main", meta={"task_name": "email_triage"}))
@@ -58,7 +58,7 @@ client.close()
 `Config` fields:
 - `api_key` (str, optional): API key. Must start with `chp_`.
 - `api_endpoint` (str, optional): Full ingestion endpoint override.
-- `servicer_endpoint` (str, optional): Control-plane endpoint override. Defaults to `https://api.chirpier.co/v1.0`.
+- `servicer_endpoint` (str, optional): Control-plane endpoint override. Defaults to `https://api.chirrop.com/v1.0`.
 - `retries` (int, optional): Retry attempts.
 - `timeout` (float, optional): HTTP timeout in seconds.
 - `batch_size` (int, optional): Flush threshold.
@@ -68,20 +68,20 @@ client.close()
 
 API key resolution precedence when `api_key` is omitted:
 1. `api_key` passed in Config/initialize
-2. `CHIRPIER_API_KEY` process environment variable
-3. `CHIRPIER_API_KEY` in local `.env`
+2. `CHIRROP_API_KEY` process environment variable
+3. `CHIRROP_API_KEY` in local `.env`
 
-Default ingest endpoint: `https://logs.chirpier.co/v1.0/logs`.
-Default servicer endpoint: `https://api.chirpier.co/v1.0`.
+Default ingest endpoint: `https://logs.chirrop.com/v1.0/logs`.
+Default servicer endpoint: `https://api.chirrop.com/v1.0`.
 The same bearer token is used for both ingest and servicer APIs.
 Queued logs are not dropped locally because of queue capacity or retry exhaustion.
 
 ### Retry behavior
 
 The SDK retries network/transport failures, `429` responses, and retryable `5xx` responses such as `502` and `504`.
-It does not retry `401`, `403`, `404`, `500`, or `503`, and `401`/`403` errors surface the Chirpier response message when available.
+It does not retry `401`, `403`, `404`, `500`, or `503`, and `401`/`403` errors surface the ChirrOp response message when available.
 
-> **Important:** When all retry attempts are exhausted, logs are silently dropped. The SDK is designed to never block your application — if the Chirpier API is persistently unreachable, queued logs will be discarded rather than causing backpressure. Monitor your Chirpier dashboard to ensure logs are arriving as expected.
+> **Important:** When all retry attempts are exhausted, logs are silently dropped. The SDK is designed to never block your application — if the ChirrOp API is persistently unreachable, queued logs will be discarded rather than causing backpressure. Monitor your ChirrOp dashboard to ensure logs are arriving as expected.
 
 ### Log
 
@@ -185,7 +185,7 @@ Create a Slack destination for OpenClaw alerts:
 import requests
 
 requests.post(
-    "https://api.chirpier.co/v1.0/destinations",
+    "https://api.chirrop.com/v1.0/destinations",
     json={
         "url": "https://hooks.slack.com/services/T000/B000/secret",
         "channel": "slack",
@@ -206,7 +206,7 @@ Create a Telegram destination for OpenClaw alerts:
 
 ```python
 requests.post(
-    "https://api.chirpier.co/v1.0/destinations",
+    "https://api.chirrop.com/v1.0/destinations",
     json={
         "channel": "telegram",
         "enabled": True,

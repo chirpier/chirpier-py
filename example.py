@@ -1,13 +1,13 @@
-"""Example usage for chirpier-py."""
+"""Example usage for chirrop-py."""
 
 from datetime import datetime, timezone
 
-from chirpier import Chirpier, Log
+from chirrop import ChirrOp, Log
 
 
 def main() -> None:
-    Chirpier.initialize(api_key="chp_your_api_key")
-    Chirpier.log_event(
+    ChirrOp.initialize(api_key="chp_your_api_key")
+    ChirrOp.log_event(
         Log(
             agent="api.worker",
             event="request_finished",
@@ -16,8 +16,8 @@ def main() -> None:
             meta={"path": "/v1.0/logs", "status": "ok"},
         )
     )
-    Chirpier.flush()
-    Chirpier.stop()
+    ChirrOp.flush()
+    ChirrOp.stop()
 
 
 if __name__ == "__main__":

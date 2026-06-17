@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import unittest
 from uuid import UUID, uuid4
 
-from chirpier.log import Log
+from chirrop.log import Log
 
 
 class TestLog(unittest.TestCase):

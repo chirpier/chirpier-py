@@ -1,11 +1,11 @@
-"""This module provides error classes for the Chirpier SDK."""
+"""This module provides error classes for the ChirrOp SDK."""
 
 from __future__ import annotations
 
 
-class ChirpierError(Exception):
+class ChirrOpError(Exception):
     """
-    Custom exception class for Chirpier SDK errors.
+    Custom exception class for ChirrOp SDK errors.
 
     This exception is raised for SDK-specific errors such as initialization
     failures, queue overflow, or configuration issues.
@@ -16,25 +16,25 @@ class ChirpierError(Exception):
     pass  # No need for custom __init__, Exception handles it perfectly
 
 
-class ChirpierNonRetryableError(ChirpierError):
+class ChirrOpNonRetryableError(ChirrOpError):
     """Raised when an ingest response should not be retried."""
 
 
-class ChirpierUnauthorizedError(ChirpierNonRetryableError):
+class ChirrOpUnauthorizedError(ChirrOpNonRetryableError):
     """Raised when the API rejects a request with HTTP 401."""
 
 
-class ChirpierForbiddenError(ChirpierNonRetryableError):
+class ChirrOpForbiddenError(ChirrOpNonRetryableError):
     """Raised when the API rejects a request with HTTP 403."""
 
 
-class ChirpierNotFoundError(ChirpierNonRetryableError):
+class ChirrOpNotFoundError(ChirrOpNonRetryableError):
     """Raised when the API rejects a request with HTTP 404."""
 
 
-class ChirpierInternalServerError(ChirpierNonRetryableError):
+class ChirrOpInternalServerError(ChirrOpNonRetryableError):
     """Raised when the API rejects a request with HTTP 500."""
 
 
-class ChirpierServiceUnavailableError(ChirpierNonRetryableError):
+class ChirrOpServiceUnavailableError(ChirrOpNonRetryableError):
     """Raised when the API rejects a request with HTTP 503."""

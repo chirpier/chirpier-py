@@ -1,4 +1,4 @@
-"""Client implementation for sending logs to the Chirpier API."""
+"""Client implementation for sending logs to the ChirrOp API."""
 
 from __future__ import annotations
 
@@ -15,21 +15,21 @@ from urllib.parse import urlparse
 import requests
 
 from .errors import (
-    ChirpierError,
-    ChirpierForbiddenError,
-    ChirpierInternalServerError,
-    ChirpierNonRetryableError,
-    ChirpierNotFoundError,
-    ChirpierServiceUnavailableError,
-    ChirpierUnauthorizedError,
+    ChirrOpError,
+    ChirrOpForbiddenError,
+    ChirrOpInternalServerError,
+    ChirrOpNonRetryableError,
+    ChirrOpNotFoundError,
+    ChirrOpServiceUnavailableError,
+    ChirrOpUnauthorizedError,
 )
 from . import __version__
 from .log import Log
 from .utils import is_valid_api_key, resolve_api_key
 
-DEFAULT_API_ENDPOINT = "https://logs.chirpier.co/v1.0/logs"
-DEFAULT_SERVICER_ENDPOINT = "https://api.chirpier.co/v1.0"
-USER_AGENT = f"chirpier-py/{__version__}"
+DEFAULT_API_ENDPOINT = "https://logs.chirrop.com/v1.0/logs"
+DEFAULT_SERVICER_ENDPOINT = "https://api.chirrop.com/v1.0"
+USER_AGENT = f"chirrop-py/{__version__}"
 
 
 def classify_log_response_status(status_code: int) -> str:
@@ -49,27 +49,27 @@ def get_response_body_text(response: requests.Response) -> str:
     return body.strip()
 
 
-def build_non_retryable_error(status_code: int, body_text: str) -> ChirpierNonRetryableError:
+def build_non_retryable_error(status_code: int, body_text: str) -> ChirrOpNonRetryableError:
     message = f"HTTP {status_code}"
     if body_text:
         message = f"{message}: {body_text}"
 
     if status_code == 401:
-        return ChirpierUnauthorizedError(message)
+        return ChirrOpUnauthorizedError(message)
     if status_code == 403:
-        return ChirpierForbiddenError(message)
+        return ChirrOpForbiddenError(message)
     if status_code == 404:
-        return ChirpierNotFoundError(message)
+        return ChirrOpNotFoundError(message)
     if status_code == 500:
-        return ChirpierInternalServerError(message)
+        return ChirrOpInternalServerError(message)
     if status_code == 503:
-        return ChirpierServiceUnavailableError(message)
-    return ChirpierNonRetryableError(message)
+        return ChirrOpServiceUnavailableError(message)
+    return ChirrOpNonRetryableError(message)
 
 
 @dataclass(slots=True)
 class Config:
-    """Configuration for Chirpier clients."""
+    """Configuration for ChirrOp clients."""
 
     api_key: str | None = None
     api_endpoint: str = DEFAULT_API_ENDPOINT
@@ -127,7 +127,7 @@ class Client:
         self.config = config
 
         self.log_queue: Queue[Log] = Queue(maxsize=config.queue_size)
-        self.logger = logging.getLogger("chirpier")
+        self.logger = logging.getLogger("chirrop")
         self.logger.setLevel(config.log_level)
         self._terminate_event = ThreadEvent()
         self._flush_now_event = ThreadEvent()
@@ -219,9 +219,9 @@ class Client:
         try:
             self.send_logs(batch)
             self.logger.info("Successfully sent batch of %d logs", len(batch))
-        except ChirpierNonRetryableError as exc:
+        except ChirrOpNonRetryableError as exc:
             self.logger.error("Failed to send logs: %s", exc)
-        except (requests.RequestException, ChirpierError) as exc:
+        except (requests.RequestException, ChirrOpError) as exc:
             self.logger.error("Failed to send logs: %s", exc)
             for entry in batch:
                 self.log_queue.put(entry)
@@ -235,7 +235,7 @@ class Client:
             batch.clear()
 
     def send_logs(self, entries: list[Log]) -> None:
-        """Send logs to Chirpier with retry and exponential backoff."""
+        """Send logs to ChirrOp with retry and exponential backoff."""
         headers = self._json_headers()
 
         payload = [entry.to_dict() for entry in entries]
@@ -274,7 +274,7 @@ class Client:
                 if body_text:
                     message = f"{message}: {body_text}"
                 raise requests.RequestException(message)
-            except ChirpierNonRetryableError:
+            except ChirrOpNonRetryableError:
                 raise
             except requests.RequestException:
                 if attempt == self.config.retries:
@@ -518,7 +518,7 @@ class Client:
         return response.json()
 
 
-class Chirpier:
+class ChirrOp:
     """Global singleton manager for package-level usage."""
 
     _client: ClassVar[Client | None] = None
@@ -526,7 +526,7 @@ class Chirpier:
     @classmethod
     def initialize(cls, config: Config | None = None, **kwargs) -> None:
         if cls._client is not None:
-            raise ChirpierError("Chirpier SDK is already initialized")
+            raise ChirrOpError("ChirrOp SDK is already initialized")
 
         client_config = config if config is not None else Config(**kwargs)
         cls._client = Client(client_config)
@@ -534,16 +534,16 @@ class Chirpier:
     @classmethod
     def log_event(cls, entry: Log) -> None:
         if cls._client is None:
-            raise ChirpierError(
-                "Chirpier SDK is not initialized. Please call initialize() first"
+            raise ChirrOpError(
+                "ChirrOp SDK is not initialized. Please call initialize() first"
             )
         cls._client.log(entry)
 
     @classmethod
     def flush(cls) -> None:
         if cls._client is None:
-            raise ChirpierError(
-                "Chirpier SDK is not initialized. Please call initialize() first"
+            raise ChirrOpError(
+                "ChirrOp SDK is not initialized. Please call initialize() first"
             )
         cls._client.flush()
 
@@ -556,22 +556,22 @@ class Chirpier:
 
 def initialize(config: Config | None = None, **kwargs) -> None:
     """Initialize global singleton client."""
-    Chirpier.initialize(config=config, **kwargs)
+    ChirrOp.initialize(config=config, **kwargs)
 
 
 def log_event(entry: Log) -> None:
     """Queue a log using the global singleton client."""
-    Chirpier.log_event(entry)
+    ChirrOp.log_event(entry)
 
 
 def flush() -> None:
     """Flush queued logs for the global singleton client."""
-    Chirpier.flush()
+    ChirrOp.flush()
 
 
 def stop() -> None:
     """Stop the global singleton client."""
-    Chirpier.stop()
+    ChirrOp.stop()
 
 
 def new_client(config: Config | None = None, **kwargs) -> Client:
